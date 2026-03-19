@@ -18,10 +18,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@aaa42aa0628b4ae2578232a66b541047968fac86  # v6.1.0
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
         with:
-          version: latest
+          setup_only: true
+
+      - name: Generate proto
+        run: buf generate
+
+      - name: golangci-lint
+        run: go tool golangci-lint run
 
       - name: go vet
         run: go vet ./...
@@ -44,6 +50,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Generate proto
+        run: buf generate
 
       - name: Run unit tests
         run: go test ./... -short -race -count=1 -coverprofile=coverage.txt
