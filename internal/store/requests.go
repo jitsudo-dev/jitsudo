@@ -112,7 +112,6 @@ func (s *Store) ListRequests(ctx context.Context, f ListFilter) ([]*RequestRow, 
 	if f.Provider != "" {
 		query += fmt.Sprintf(" AND provider = $%d", n)
 		args = append(args, f.Provider)
-		n++
 	}
 	query += " ORDER BY created_at DESC LIMIT 200"
 

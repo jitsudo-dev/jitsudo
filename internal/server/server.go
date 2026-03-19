@@ -36,11 +36,6 @@ type Config struct {
 	OIDCClientID string // e.g., "jitsudo-cli"
 }
 
-// storeI is the subset of store.Store used by the server for health checks.
-type storeI interface {
-	Ping(ctx context.Context) error
-}
-
 // Server is the jitsudod control plane.
 type Server struct {
 	cfg        Config
