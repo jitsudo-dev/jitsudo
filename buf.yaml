@@ -8,7 +8,8 @@ lint:
   use:
     - STANDARD
   except:
-    - PACKAGE_VERSION_SUFFIX  # allow v1alpha1 without requiring it in package names
+    - PACKAGE_VERSION_SUFFIX      # allow v1alpha1 without requiring it in package names
+    - RPC_REQUEST_STANDARD_NAME   # Input/Filter suffixes are intentional; *Request would collide with the ElevationRequest domain object
 breaking:
   use:
     - FILE

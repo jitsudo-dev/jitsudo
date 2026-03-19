@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package jitsudo.v1alpha1;
 
-import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
