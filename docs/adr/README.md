@@ -15,6 +15,7 @@ ADRs document why key design decisions were made, not just what was decided.
 | [ADR-008](ADR-008-monorepo.md) | Monorepo structure with separate repos for Helm and Terraform | Accepted |
 | [ADR-009](ADR-009-no-sqlite.md) | No SQLite support | Accepted |
 | [ADR-010](ADR-010-buf-build.md) | buf.build for protobuf management | Accepted |
+| [ADR-011](ADR-011-provider-configs.md) | Provider configuration schemas | Accepted |
 
 ## Format
 

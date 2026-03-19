@@ -8,18 +8,35 @@ package aws
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
 )
 
 // Config holds AWS provider configuration.
 type Config struct {
+	// Mode selects the grant mechanism: "sts_assume_role" or "identity_center".
+	Mode string `yaml:"mode"`
+
 	// Region is the primary AWS region (e.g., "us-east-1").
-	Region string
+	Region string `yaml:"region"`
 
 	// IdentityCenterInstanceARN is the ARN of the IAM Identity Center instance.
-	// Required for Identity Center permission set assignment.
-	IdentityCenterInstanceARN string
+	// Required when Mode is "identity_center".
+	IdentityCenterInstanceARN string `yaml:"identity_center_instance_arn"`
+
+	// IdentityCenterStoreID is the IAM Identity Center identity store ID (e.g., "d-xxxxxxxxxx").
+	// Required when Mode is "identity_center".
+	IdentityCenterStoreID string `yaml:"identity_center_store_id"`
+
+	// RoleARNTemplate is a Go template for the IAM role ARN to assume.
+	// Required when Mode is "sts_assume_role".
+	// Example: "arn:aws:iam::{scope}:role/jitsudo-{role}"
+	RoleARNTemplate string `yaml:"role_arn_template"`
+
+	// MaxDuration caps the elevation window the provider will honour.
+	// If zero, no server-side cap is enforced beyond the IAM/IC limit.
+	MaxDuration time.Duration `yaml:"max_duration"`
 }
 
 // Provider is the AWS implementation of providers.Provider.

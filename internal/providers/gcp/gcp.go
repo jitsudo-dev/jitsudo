@@ -8,14 +8,29 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
 )
 
 // Config holds GCP provider configuration.
 type Config struct {
-	// OrganizationID is the GCP organization ID.
-	OrganizationID string
+	// OrganizationID is the GCP organization ID (numeric string, e.g., "123456789").
+	// Used when resource_scope targets the organization level.
+	OrganizationID string `yaml:"organization_id"`
+
+	// CredentialsSource selects how jitsudod authenticates to GCP:
+	// "workload_identity_federation", "service_account_key", or "application_default".
+	CredentialsSource string `yaml:"credentials_source"`
+
+	// MaxDuration caps the elevation window the provider will honour.
+	// If zero, no server-side cap is enforced beyond GCP's IAM limit.
+	MaxDuration time.Duration `yaml:"max_duration"`
+
+	// ConditionTitlePrefix is prepended to the IAM condition title for all
+	// jitsudo-managed bindings (e.g., "jitsudo" → "jitsudo-<requestID>").
+	// Defaults to "jitsudo" if empty.
+	ConditionTitlePrefix string `yaml:"condition_title_prefix"`
 }
 
 // Provider is the GCP implementation of providers.Provider.

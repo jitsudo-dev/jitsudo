@@ -8,6 +8,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
 )
@@ -15,8 +16,21 @@ import (
 // Config holds Kubernetes provider configuration.
 type Config struct {
 	// KubeconfigPath is the path to the kubeconfig file.
-	// If empty, in-cluster config is used.
-	KubeconfigPath string
+	// If empty, in-cluster service account credentials are used (recommended for production).
+	KubeconfigPath string `yaml:"kubeconfig"`
+
+	// DefaultNamespace is used for namespaced RoleBindings when the request's
+	// ResourceScope is empty. If also empty, a ClusterRoleBinding is created.
+	DefaultNamespace string `yaml:"default_namespace"`
+
+	// MaxDuration caps the elevation window the provider will honour.
+	// If zero, no server-side cap is enforced.
+	MaxDuration time.Duration `yaml:"max_duration"`
+
+	// ManagedLabel is the label key applied to all jitsudo-created bindings.
+	// The expiry sweeper uses this label to query and clean up expired bindings.
+	// Defaults to "jitsudo.dev/managed" if empty.
+	ManagedLabel string `yaml:"managed_label"`
 }
 
 // Provider is the Kubernetes implementation of providers.Provider.
