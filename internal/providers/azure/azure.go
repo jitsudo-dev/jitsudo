@@ -8,9 +8,9 @@ package azure
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
+	"github.com/jitsudo-dev/jitsudo/pkg/types"
 )
 
 // Config holds Azure provider configuration.
@@ -30,7 +30,7 @@ type Config struct {
 
 	// MaxDuration caps the elevation window the provider will honour.
 	// If zero, no server-side cap is enforced beyond the Azure RBAC limit.
-	MaxDuration time.Duration `yaml:"max_duration"`
+	MaxDuration types.Duration `yaml:"max_duration"`
 }
 
 // Provider is the Azure implementation of providers.Provider.

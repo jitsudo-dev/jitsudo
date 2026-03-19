@@ -2,19 +2,22 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
 )
 
 func newRequestCmd() *cobra.Command {
 	var (
-		provider  string
-		role      string
-		scope     string
-		duration  string
-		reason    string
+		provider   string
+		role       string
+		scope      string
+		duration   string
+		reason     string
 		breakGlass bool
-		wait      bool
+		wait       bool
 	)
 
 	cmd := &cobra.Command{
@@ -33,8 +36,39 @@ Upon approval, credentials are issued for the specified duration and automatical
 
   jitsudo request --provider gcp --role roles/editor --scope my-project --duration 1h --reason "Deploy hotfix"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: validate flags, build request, submit to control plane
-			fmt.Fprintln(cmd.OutOrStdout(), "request: not yet implemented")
+			ctx := cmd.Context()
+			_ = wait // polling deferred to Milestone 2
+
+			d, err := time.ParseDuration(duration)
+			if err != nil {
+				return fmt.Errorf("invalid --duration %q: %w", duration, err)
+			}
+
+			c, err := newClient(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			resp, err := c.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+				Provider:        provider,
+				Role:            role,
+				ResourceScope:   scope,
+				DurationSeconds: int64(d.Seconds()),
+				Reason:          reason,
+				BreakGlass:      breakGlass,
+			})
+			if err != nil {
+				return fmt.Errorf("create request: %w", err)
+			}
+
+			req := resp.GetRequest()
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Request ID: %s\nState:      %s\n", req.GetId(), stateString(req.GetState()))
+			if !flags.quiet {
+				fmt.Fprintf(out, "Provider:   %s\nRole:       %s\nScope:      %s\n",
+					req.GetProvider(), req.GetRole(), req.GetResourceScope())
+			}
 			return nil
 		},
 	}

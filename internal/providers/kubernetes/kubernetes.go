@@ -8,9 +8,9 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
+	"github.com/jitsudo-dev/jitsudo/pkg/types"
 )
 
 // Config holds Kubernetes provider configuration.
@@ -25,7 +25,7 @@ type Config struct {
 
 	// MaxDuration caps the elevation window the provider will honour.
 	// If zero, no server-side cap is enforced.
-	MaxDuration time.Duration `yaml:"max_duration"`
+	MaxDuration types.Duration `yaml:"max_duration"`
 
 	// ManagedLabel is the label key applied to all jitsudo-created bindings.
 	// The expiry sweeper uses this label to query and clean up expired bindings.

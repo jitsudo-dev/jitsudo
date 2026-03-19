@@ -1,0 +1,1005 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "jitsudo/v1alpha1/service.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "JitsudoService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/api/v1alpha1/audit": {
+      "get": {
+        "summary": "QueryAudit queries the append-only audit log with optional filters.",
+        "operationId": "JitsudoService_QueryAudit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1QueryAuditResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "actorIdentity",
+            "description": "Filter by actor identity.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "provider",
+            "description": "Filter by provider.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "requestId",
+            "description": "Filter by request ID.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "since",
+            "description": "Return events after this timestamp.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "until",
+            "description": "Return events before this timestamp.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "pageToken",
+            "description": "Pagination token from a previous response.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "description": "Maximum number of events to return (default 100, max 1000).",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/policies": {
+      "get": {
+        "summary": "ListPolicies returns all stored Rego policies.",
+        "operationId": "JitsudoService_ListPolicies",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1ListPoliciesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "JitsudoService"
+        ]
+      },
+      "post": {
+        "summary": "ApplyPolicy creates or updates a policy (upsert by name).",
+        "operationId": "JitsudoService_ApplyPolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1ApplyPolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "ApplyPolicyInput creates or replaces a policy (upsert by name).",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1alpha1ApplyPolicyInput"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/policies/{id}": {
+      "get": {
+        "summary": "GetPolicy returns a single policy by ID.",
+        "operationId": "JitsudoService_GetPolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1GetPolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      },
+      "delete": {
+        "summary": "DeletePolicy removes a policy by ID.",
+        "operationId": "JitsudoService_DeletePolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1DeletePolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/policies:eval": {
+      "post": {
+        "summary": "EvalPolicy performs a dry-run evaluation of the current policy set.",
+        "operationId": "JitsudoService_EvalPolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1EvalPolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "EvalPolicyInput runs a dry-run evaluation against the current policy set.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1alpha1EvalPolicyInput"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/requests": {
+      "get": {
+        "summary": "ListRequests returns a filtered list of elevation requests.",
+        "operationId": "JitsudoService_ListRequests",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1ListRequestsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "mine",
+            "description": "Filter to requests belonging to the caller.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "pending",
+            "description": "Filter to pending requests (for approvers).",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "requesterIdentity",
+            "description": "Filter by requester identity.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "state",
+            "description": "Filter by state.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "REQUEST_STATE_UNSPECIFIED",
+              "REQUEST_STATE_PENDING",
+              "REQUEST_STATE_APPROVED",
+              "REQUEST_STATE_REJECTED",
+              "REQUEST_STATE_ACTIVE",
+              "REQUEST_STATE_EXPIRED",
+              "REQUEST_STATE_REVOKED"
+            ],
+            "default": "REQUEST_STATE_UNSPECIFIED"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      },
+      "post": {
+        "summary": "CreateRequest submits a new elevation request.",
+        "operationId": "JitsudoService_CreateRequest",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1CreateRequestResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "CreateRequestInput is the body for submitting a new elevation request.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1alpha1CreateRequestInput"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/requests/{id}": {
+      "get": {
+        "summary": "GetRequest returns a single elevation request by ID.",
+        "operationId": "JitsudoService_GetRequest",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1GetRequestResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/requests/{requestId}/approve": {
+      "post": {
+        "summary": "ApproveRequest approves a pending elevation request.",
+        "operationId": "JitsudoService_ApproveRequest",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1ApproveRequestResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/JitsudoServiceApproveRequestBody"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/requests/{requestId}/credentials": {
+      "get": {
+        "summary": "GetCredentials retrieves the active credentials for an approved/active request.",
+        "operationId": "JitsudoService_GetCredentials",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1GetCredentialsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/requests/{requestId}/deny": {
+      "post": {
+        "summary": "DenyRequest denies a pending elevation request.",
+        "operationId": "JitsudoService_DenyRequest",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1DenyRequestResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/JitsudoServiceDenyRequestBody"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/requests/{requestId}/revoke": {
+      "post": {
+        "summary": "RevokeRequest terminates an active elevation before its natural expiry.",
+        "operationId": "JitsudoService_RevokeRequest",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1RevokeRequestResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/JitsudoServiceRevokeRequestBody"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "JitsudoServiceApproveRequestBody": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "type": "string"
+        }
+      },
+      "description": "ApproveRequestInput carries an optional comment for an approval."
+    },
+    "JitsudoServiceDenyRequestBody": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "description": "DenyRequestInput carries the required reason for a denial."
+    },
+    "JitsudoServiceRevokeRequestBody": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "description": "RevokeRequestInput carries an optional reason for early revocation."
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1alpha1ApplyPolicyInput": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/v1alpha1PolicyType"
+        },
+        "rego": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "description": "ApplyPolicyInput creates or replaces a policy (upsert by name)."
+    },
+    "v1alpha1ApplyPolicyResponse": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/definitions/v1alpha1Policy"
+        }
+      },
+      "description": "ApplyPolicyResponse wraps the created/updated policy."
+    },
+    "v1alpha1ApproveRequestResponse": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "$ref": "#/definitions/v1alpha1ElevationRequest"
+        }
+      },
+      "description": "ApproveRequestResponse wraps the updated request after approval."
+    },
+    "v1alpha1AuditEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64",
+          "description": "Sequential event ID."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp of the event."
+        },
+        "actorIdentity": {
+          "type": "string",
+          "description": "Identity of the actor (IdP subject claim)."
+        },
+        "action": {
+          "type": "string",
+          "description": "Action performed (e.g. \"request.created\", \"request.approved\", \"grant.issued\")."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Associated request ID (if applicable)."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Provider involved (if applicable)."
+        },
+        "resourceScope": {
+          "type": "string",
+          "description": "Resource scope (if applicable)."
+        },
+        "outcome": {
+          "type": "string",
+          "description": "Outcome: \"success\" or \"failure\"."
+        },
+        "detailsJson": {
+          "type": "string",
+          "description": "Additional context as JSON."
+        },
+        "prevHash": {
+          "type": "string",
+          "description": "SHA-256 hash of the previous audit entry (hash chain for tamper evidence)."
+        },
+        "hash": {
+          "type": "string",
+          "description": "SHA-256 hash of this entry."
+        }
+      },
+      "description": "AuditEvent represents a single immutable entry in the audit log."
+    },
+    "v1alpha1CreateRequestInput": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "resourceScope": {
+          "type": "string"
+        },
+        "durationSeconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "breakGlass": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "CreateRequestInput is the body for submitting a new elevation request."
+    },
+    "v1alpha1CreateRequestResponse": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "$ref": "#/definitions/v1alpha1ElevationRequest"
+        }
+      },
+      "description": "CreateRequestResponse wraps the newly created request."
+    },
+    "v1alpha1Credential": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "description": "Credential is a single environment variable credential key-value pair."
+    },
+    "v1alpha1DeletePolicyResponse": {
+      "type": "object",
+      "description": "DeletePolicyResponse is empty on success."
+    },
+    "v1alpha1DenyRequestResponse": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "$ref": "#/definitions/v1alpha1ElevationRequest"
+        }
+      },
+      "description": "DenyRequestResponse wraps the updated request after denial."
+    },
+    "v1alpha1ElevationGrant": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "credentials": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1alpha1Credential"
+          }
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "ElevationGrant contains the credentials issued for an active elevation."
+    },
+    "v1alpha1ElevationRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Globally unique request identifier (e.g. req_01J8KZ...)."
+        },
+        "state": {
+          "$ref": "#/definitions/v1alpha1RequestState",
+          "description": "State in the request lifecycle."
+        },
+        "requesterIdentity": {
+          "type": "string",
+          "description": "Identity of the requester (IdP subject claim, typically email)."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Cloud provider (aws, azure, gcp, kubernetes)."
+        },
+        "role": {
+          "type": "string",
+          "description": "The role or permission set to grant."
+        },
+        "resourceScope": {
+          "type": "string",
+          "description": "Provider-specific resource scope (AWS account ID, GCP project, K8s namespace)."
+        },
+        "durationSeconds": {
+          "type": "string",
+          "format": "int64",
+          "description": "Requested elevation duration in seconds."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable justification for the request."
+        },
+        "breakGlass": {
+          "type": "boolean",
+          "description": "Whether this is an emergency break-glass request."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Provider-specific additional parameters."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the request was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the request was last updated."
+        },
+        "approverIdentity": {
+          "type": "string",
+          "description": "Identity of the approver (populated after APPROVED/REJECTED)."
+        },
+        "approverComment": {
+          "type": "string",
+          "description": "Approver comment or denial reason."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the active elevation expires (populated after ACTIVE)."
+        }
+      },
+      "description": "ElevationRequest represents a request for temporary elevated cloud access."
+    },
+    "v1alpha1EvalPolicyInput": {
+      "type": "object",
+      "properties": {
+        "inputJson": {
+          "type": "string",
+          "description": "JSON-encoded OPA input document."
+        },
+        "type": {
+          "$ref": "#/definitions/v1alpha1PolicyType",
+          "description": "Optional: evaluate only policies of this type."
+        }
+      },
+      "description": "EvalPolicyInput runs a dry-run evaluation against the current policy set."
+    },
+    "v1alpha1EvalPolicyResponse": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable explanation from the policy engine."
+        },
+        "resultJson": {
+          "type": "string",
+          "description": "Full OPA evaluation result as JSON."
+        }
+      },
+      "description": "EvalPolicyResponse contains the result of a dry-run policy evaluation."
+    },
+    "v1alpha1GetCredentialsResponse": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1alpha1ElevationGrant"
+        }
+      },
+      "description": "GetCredentialsResponse wraps the active credentials for a request."
+    },
+    "v1alpha1GetPolicyResponse": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/definitions/v1alpha1Policy"
+        }
+      },
+      "description": "GetPolicyResponse wraps a single policy."
+    },
+    "v1alpha1GetRequestResponse": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "$ref": "#/definitions/v1alpha1ElevationRequest"
+        }
+      },
+      "description": "GetRequestResponse wraps a single request."
+    },
+    "v1alpha1ListPoliciesResponse": {
+      "type": "object",
+      "properties": {
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1alpha1Policy"
+          }
+        }
+      },
+      "description": "ListPoliciesResponse wraps a list of policies."
+    },
+    "v1alpha1ListRequestsResponse": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1alpha1ElevationRequest"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      },
+      "description": "ListRequestsResponse wraps a paginated list of requests."
+    },
+    "v1alpha1Policy": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/v1alpha1PolicyType"
+        },
+        "rego": {
+          "type": "string",
+          "description": "Rego policy source code."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this policy governs."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this policy is currently active."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Identity that last modified this policy."
+        }
+      },
+      "description": "Policy represents a stored Rego policy."
+    },
+    "v1alpha1PolicyType": {
+      "type": "string",
+      "enum": [
+        "POLICY_TYPE_UNSPECIFIED",
+        "POLICY_TYPE_ELIGIBILITY",
+        "POLICY_TYPE_APPROVAL"
+      ],
+      "default": "POLICY_TYPE_UNSPECIFIED",
+      "description": "PolicyType distinguishes eligibility policies from approval policies."
+    },
+    "v1alpha1QueryAuditResponse": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1alpha1AuditEvent"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      },
+      "description": "QueryAuditResponse wraps a page of audit events."
+    },
+    "v1alpha1RequestState": {
+      "type": "string",
+      "enum": [
+        "REQUEST_STATE_UNSPECIFIED",
+        "REQUEST_STATE_PENDING",
+        "REQUEST_STATE_APPROVED",
+        "REQUEST_STATE_REJECTED",
+        "REQUEST_STATE_ACTIVE",
+        "REQUEST_STATE_EXPIRED",
+        "REQUEST_STATE_REVOKED"
+      ],
+      "default": "REQUEST_STATE_UNSPECIFIED",
+      "description": "RequestState represents the lifecycle state of an elevation request."
+    },
+    "v1alpha1RevokeRequestResponse": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "$ref": "#/definitions/v1alpha1ElevationRequest"
+        }
+      },
+      "description": "RevokeRequestResponse wraps the updated request after revocation."
+    }
+  }
+}

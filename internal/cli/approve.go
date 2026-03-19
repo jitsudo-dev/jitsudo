@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
 )
 
 func newApproveCmd() *cobra.Command {
@@ -16,8 +18,24 @@ func newApproveCmd() *cobra.Command {
 		Example: `  jitsudo approve req_01J8KZ...
   jitsudo approve req_01J8KZ... --comment "Approved for INC-4421 response"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: submit approval to control plane
-			fmt.Fprintln(cmd.OutOrStdout(), "approve: not yet implemented")
+			ctx := cmd.Context()
+
+			c, err := newClient(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			resp, err := c.Service().ApproveRequest(ctx, &jitsudov1alpha1.ApproveRequestInput{
+				RequestId: args[0],
+				Comment:   comment,
+			})
+			if err != nil {
+				return fmt.Errorf("approve: %w", err)
+			}
+
+			req := resp.GetRequest()
+			fmt.Fprintf(cmd.OutOrStdout(), "Request %s → %s\n", req.GetId(), stateString(req.GetState()))
 			return nil
 		},
 	}
@@ -36,8 +54,24 @@ func newDenyCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Example: `  jitsudo deny req_01J8KZ... --reason "Not authorized for production access"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: submit denial to control plane
-			fmt.Fprintln(cmd.OutOrStdout(), "deny: not yet implemented")
+			ctx := cmd.Context()
+
+			c, err := newClient(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			resp, err := c.Service().DenyRequest(ctx, &jitsudov1alpha1.DenyRequestInput{
+				RequestId: args[0],
+				Reason:    reason,
+			})
+			if err != nil {
+				return fmt.Errorf("deny: %w", err)
+			}
+
+			req := resp.GetRequest()
+			fmt.Fprintf(cmd.OutOrStdout(), "Request %s → %s\n", req.GetId(), stateString(req.GetState()))
 			return nil
 		},
 	}

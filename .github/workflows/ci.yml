@@ -88,6 +88,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Generate proto
+        run: buf generate
+
       - name: Build CLI
         env:
           GOOS: ${{ matrix.goos }}
@@ -127,6 +135,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Generate proto
+        run: buf generate
 
       - name: Run integration tests
         env:

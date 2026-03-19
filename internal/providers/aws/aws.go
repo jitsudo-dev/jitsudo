@@ -8,9 +8,9 @@ package aws
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
+	"github.com/jitsudo-dev/jitsudo/pkg/types"
 )
 
 // Config holds AWS provider configuration.
@@ -36,7 +36,7 @@ type Config struct {
 
 	// MaxDuration caps the elevation window the provider will honour.
 	// If zero, no server-side cap is enforced beyond the IAM/IC limit.
-	MaxDuration time.Duration `yaml:"max_duration"`
+	MaxDuration types.Duration `yaml:"max_duration"`
 }
 
 // Provider is the AWS implementation of providers.Provider.

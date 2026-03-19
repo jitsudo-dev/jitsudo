@@ -38,7 +38,9 @@ lint:
 
 ## proto: Regenerate Go code from protobuf definitions (requires buf)
 proto:
+	buf dep update
 	buf generate
+	go mod tidy
 
 ## proto-lint: Lint protobuf definitions
 proto-lint:

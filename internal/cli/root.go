@@ -4,8 +4,13 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/jitsudo-dev/jitsudo/pkg/client"
 )
 
 // globalFlags are flags available on every command.
@@ -63,6 +68,33 @@ Documentation: https://jitsudo.dev/docs`,
 	)
 
 	return root
+}
+
+// newClient constructs an authenticated gRPC client, merging stored credentials
+// with any command-line flag overrides.
+func newClient(ctx context.Context) (*client.Client, error) {
+	serverURL := flags.serverURL
+	token := flags.token
+
+	// Fall back to stored credentials for any unset values.
+	if serverURL == "" || token == "" {
+		creds, err := client.LoadCredentials()
+		if err != nil {
+			return nil, fmt.Errorf("not authenticated — run 'jitsudo login' first: %w", err)
+		}
+		if serverURL == "" {
+			serverURL = creds.ServerURL
+		}
+		if token == "" {
+			token = creds.Token
+		}
+	}
+
+	return client.New(ctx, client.Config{
+		ServerURL: serverURL,
+		Token:     token,
+		Insecure:  true, // TLS deferred to Milestone 2
+	})
 }
 
 // initConfig loads configuration from file and environment variables.
