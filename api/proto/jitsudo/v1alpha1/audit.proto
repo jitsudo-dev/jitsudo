@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package jitsudo.v1alpha1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
+
+// AuditEvent represents a single immutable entry in the audit log.
+message AuditEvent {
+  // Sequential event ID.
+  int64 id = 1;
+  // UTC timestamp of the event.
+  google.protobuf.Timestamp timestamp = 2;
+  // Identity of the actor (IdP subject claim).
+  string actor_identity = 3;
+  // Action performed (e.g. "request.created", "request.approved", "grant.issued").
+  string action = 4;
+  // Associated request ID (if applicable).
+  string request_id = 5;
+  // Provider involved (if applicable).
+  string provider = 6;
+  // Resource scope (if applicable).
+  string resource_scope = 7;
+  // Outcome: "success" or "failure".
+  string outcome = 8;
+  // Additional context as JSON.
+  string details_json = 9;
+  // SHA-256 hash of the previous audit entry (hash chain for tamper evidence).
+  string prev_hash = 10;
+  // SHA-256 hash of this entry.
+  string hash = 11;
+}
+
+// QueryAuditInput specifies filters for querying the audit log.
+message QueryAuditInput {
+  // Filter by actor identity.
+  string actor_identity = 1;
+  // Filter by provider.
+  string provider = 2;
+  // Filter by request ID.
+  string request_id = 3;
+  // Return events after this timestamp.
+  google.protobuf.Timestamp since = 4;
+  // Return events before this timestamp.
+  google.protobuf.Timestamp until = 5;
+  // Pagination token from a previous response.
+  string page_token = 6;
+  // Maximum number of events to return (default 100, max 1000).
+  int32 page_size = 7;
+}
+
+// QueryAuditResponse wraps a page of audit events.
+message QueryAuditResponse {
+  repeated AuditEvent events = 1;
+  string next_page_token = 2;
+}

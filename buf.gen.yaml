@@ -1,0 +1,23 @@
+version: v2
+plugins:
+  # Go protobuf stubs
+  - remote: buf.build/protocolbuffers/go
+    out: internal/gen/proto/go
+    opt:
+      - paths=source_relative
+
+  # gRPC Go stubs
+  - remote: buf.build/grpc/go
+    out: internal/gen/proto/go
+    opt:
+      - paths=source_relative
+
+  # grpc-gateway REST proxy
+  - remote: buf.build/grpc-ecosystem/gateway
+    out: internal/gen/proto/go
+    opt:
+      - paths=source_relative
+
+  # OpenAPI v2 spec
+  - remote: buf.build/grpc-ecosystem/openapiv2
+    out: api/openapi

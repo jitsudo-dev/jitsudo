@@ -1,0 +1,50 @@
+# dex configuration for local development.
+# This is a mock OIDC provider — do NOT use in production.
+# It provides pre-configured test users and groups for evaluating jitsudo locally.
+
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+  responseTypes:
+    - code
+
+# Enable device flow (required by jitsudo CLI)
+deviceflow:
+  enabled: true
+
+staticClients:
+  - id: jitsudo-cli
+    name: jitsudo CLI
+    public: true  # Public client — no secret required for device flow
+    redirectURIs:
+      - urn:ietf:wg:oauth:2.0:oob
+
+  - id: jitsudo-server
+    name: jitsudo Server
+    secret: jitsudo-server-secret
+    redirectURIs:
+      - http://localhost:8080/callback
+
+# Pre-configured test users for local development.
+# All passwords are "password" — never use in production.
+enablePasswordDB: true
+staticPasswords:
+  - email: alice@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"  # password
+    username: alice
+    userID: "alice-id-001"
+  - email: bob@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"  # password
+    username: bob
+    userID: "bob-id-001"
+  - email: charlie@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"  # password
+    username: charlie
+    userID: "charlie-id-001"

@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package jitsudo.v1alpha1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
+
+// RequestState represents the lifecycle state of an elevation request.
+enum RequestState {
+  REQUEST_STATE_UNSPECIFIED = 0;
+  REQUEST_STATE_PENDING = 1;
+  REQUEST_STATE_APPROVED = 2;
+  REQUEST_STATE_REJECTED = 3;
+  REQUEST_STATE_ACTIVE = 4;
+  REQUEST_STATE_EXPIRED = 5;
+  REQUEST_STATE_REVOKED = 6;
+}
+
+// ElevationRequest represents a request for temporary elevated cloud access.
+message ElevationRequest {
+  // Globally unique request identifier (e.g. req_01J8KZ...).
+  string id = 1;
+
+  // State in the request lifecycle.
+  RequestState state = 2;
+
+  // Identity of the requester (IdP subject claim, typically email).
+  string requester_identity = 3;
+
+  // Cloud provider (aws, azure, gcp, kubernetes).
+  string provider = 4;
+
+  // The role or permission set to grant.
+  string role = 5;
+
+  // Provider-specific resource scope (AWS account ID, GCP project, K8s namespace).
+  string resource_scope = 6;
+
+  // Requested elevation duration in seconds.
+  int64 duration_seconds = 7;
+
+  // Human-readable justification for the request.
+  string reason = 8;
+
+  // Whether this is an emergency break-glass request.
+  bool break_glass = 9;
+
+  // Provider-specific additional parameters.
+  map<string, string> metadata = 10;
+
+  // Timestamp when the request was created.
+  google.protobuf.Timestamp created_at = 11;
+
+  // Timestamp when the request was last updated.
+  google.protobuf.Timestamp updated_at = 12;
+
+  // Identity of the approver (populated after APPROVED/REJECTED).
+  string approver_identity = 13;
+
+  // Approver comment or denial reason.
+  string approver_comment = 14;
+
+  // Timestamp when the active elevation expires (populated after ACTIVE).
+  google.protobuf.Timestamp expires_at = 15;
+}
+
+// Credential is a single environment variable credential key-value pair.
+message Credential {
+  string name = 1;
+  string value = 2;
+}
+
+// ElevationGrant contains the credentials issued for an active elevation.
+message ElevationGrant {
+  string request_id = 1;
+  repeated Credential credentials = 2;
+  google.protobuf.Timestamp issued_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// CreateRequestInput is the body for submitting a new elevation request.
+message CreateRequestInput {
+  string provider = 1;
+  string role = 2;
+  string resource_scope = 3;
+  int64 duration_seconds = 4;
+  string reason = 5;
+  bool break_glass = 6;
+  map<string, string> metadata = 7;
+}
+
+// ApproveRequestInput carries an optional comment for an approval.
+message ApproveRequestInput {
+  string request_id = 1;
+  string comment = 2;
+}
+
+// DenyRequestInput carries the required reason for a denial.
+message DenyRequestInput {
+  string request_id = 1;
+  string reason = 2;
+}
+
+// RevokeRequestInput carries an optional reason for early revocation.
+message RevokeRequestInput {
+  string request_id = 1;
+  string reason = 2;
+}
+
+// ListRequestsFilter optionally filters the list requests response.
+message ListRequestsFilter {
+  // Filter to requests belonging to the caller.
+  bool mine = 1;
+  // Filter to pending requests (for approvers).
+  bool pending = 2;
+  // Filter by requester identity.
+  string requester_identity = 3;
+  // Filter by state.
+  RequestState state = 4;
+}
+
+// ListRequestsResponse wraps a paginated list of requests.
+message ListRequestsResponse {
+  repeated ElevationRequest requests = 1;
+  string next_page_token = 2;
+}
+
+// GetRequestResponse wraps a single request.
+message GetRequestResponse {
+  ElevationRequest request = 1;
+}
+
+// CreateRequestResponse wraps the newly created request.
+message CreateRequestResponse {
+  ElevationRequest request = 1;
+}
+
+// ApproveRequestResponse wraps the updated request after approval.
+message ApproveRequestResponse {
+  ElevationRequest request = 1;
+}
+
+// DenyRequestResponse wraps the updated request after denial.
+message DenyRequestResponse {
+  ElevationRequest request = 1;
+}
+
+// RevokeRequestResponse wraps the updated request after revocation.
+message RevokeRequestResponse {
+  ElevationRequest request = 1;
+}
+
+// GetCredentialsResponse wraps the active credentials for a request.
+message GetCredentialsResponse {
+  ElevationGrant grant = 1;
+}

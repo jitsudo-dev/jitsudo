@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package jitsudo.v1alpha1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
+
+// PolicyType distinguishes eligibility policies from approval policies.
+enum PolicyType {
+  POLICY_TYPE_UNSPECIFIED = 0;
+  POLICY_TYPE_ELIGIBILITY = 1;
+  POLICY_TYPE_APPROVAL = 2;
+}
+
+// Policy represents a stored Rego policy.
+message Policy {
+  string id = 1;
+  string name = 2;
+  PolicyType type = 3;
+  // Rego policy source code.
+  string rego = 4;
+  // Human-readable description of what this policy governs.
+  string description = 5;
+  // Whether this policy is currently active.
+  bool enabled = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  // Identity that last modified this policy.
+  string updated_by = 9;
+}
+
+// ApplyPolicyInput creates or replaces a policy (upsert by name).
+message ApplyPolicyInput {
+  string name = 1;
+  PolicyType type = 2;
+  string rego = 3;
+  string description = 4;
+  bool enabled = 5;
+}
+
+// EvalPolicyInput runs a dry-run evaluation against the current policy set.
+message EvalPolicyInput {
+  // JSON-encoded OPA input document.
+  string input_json = 1;
+  // Optional: evaluate only policies of this type.
+  PolicyType type = 2;
+}
+
+// EvalPolicyResponse contains the result of a dry-run policy evaluation.
+message EvalPolicyResponse {
+  bool allowed = 1;
+  // Human-readable explanation from the policy engine.
+  string reason = 2;
+  // Full OPA evaluation result as JSON.
+  string result_json = 3;
+}
+
+// ListPoliciesResponse wraps a list of policies.
+message ListPoliciesResponse {
+  repeated Policy policies = 1;
+}
+
+// GetPolicyResponse wraps a single policy.
+message GetPolicyResponse {
+  Policy policy = 1;
+}
+
+// ApplyPolicyResponse wraps the created/updated policy.
+message ApplyPolicyResponse {
+  Policy policy = 1;
+}
+
+// DeletePolicyResponse is empty on success.
+message DeletePolicyResponse {}

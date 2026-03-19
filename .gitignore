@@ -1,0 +1,41 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace
+go.work
+go.work.sum
+
+# Generated protobuf code — regenerate with `make proto`
+internal/gen/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local config overrides
+*.local.yaml
+*.local.env
+.env
+
+# Docker
+.docker/
+
+# Secrets (never commit these)
+*.pem
+*.key
+*.crt
+credentials

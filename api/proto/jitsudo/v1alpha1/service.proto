@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package jitsudo.v1alpha1;
+
+import "google/api/annotations.proto";
+import "jitsudo/v1alpha1/audit.proto";
+import "jitsudo/v1alpha1/policies.proto";
+import "jitsudo/v1alpha1/requests.proto";
+
+option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
+
+// JitsudoService is the core API surface of the jitsudod control plane.
+// All CLI commands and external integrations interact through this service.
+service JitsudoService {
+  // --- Elevation Requests ---
+
+  // CreateRequest submits a new elevation request.
+  rpc CreateRequest(CreateRequestInput) returns (CreateRequestResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/requests"
+      body: "*"
+    };
+  }
+
+  // ListRequests returns a filtered list of elevation requests.
+  rpc ListRequests(ListRequestsFilter) returns (ListRequestsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/requests"
+    };
+  }
+
+  // GetRequest returns a single elevation request by ID.
+  rpc GetRequest(GetRequestInput) returns (GetRequestResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/requests/{id}"
+    };
+  }
+
+  // ApproveRequest approves a pending elevation request.
+  rpc ApproveRequest(ApproveRequestInput) returns (ApproveRequestResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/requests/{request_id}/approve"
+      body: "*"
+    };
+  }
+
+  // DenyRequest denies a pending elevation request.
+  rpc DenyRequest(DenyRequestInput) returns (DenyRequestResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/requests/{request_id}/deny"
+      body: "*"
+    };
+  }
+
+  // RevokeRequest terminates an active elevation before its natural expiry.
+  rpc RevokeRequest(RevokeRequestInput) returns (RevokeRequestResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/requests/{request_id}/revoke"
+      body: "*"
+    };
+  }
+
+  // GetCredentials retrieves the active credentials for an approved/active request.
+  rpc GetCredentials(GetCredentialsInput) returns (GetCredentialsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/requests/{request_id}/credentials"
+    };
+  }
+
+  // --- Policies ---
+
+  // ListPolicies returns all stored Rego policies.
+  rpc ListPolicies(ListPoliciesInput) returns (ListPoliciesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/policies"
+    };
+  }
+
+  // GetPolicy returns a single policy by ID.
+  rpc GetPolicy(GetPolicyInput) returns (GetPolicyResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/policies/{id}"
+    };
+  }
+
+  // ApplyPolicy creates or updates a policy (upsert by name).
+  rpc ApplyPolicy(ApplyPolicyInput) returns (ApplyPolicyResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/policies"
+      body: "*"
+    };
+  }
+
+  // DeletePolicy removes a policy by ID.
+  rpc DeletePolicy(DeletePolicyInput) returns (DeletePolicyResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1alpha1/policies/{id}"
+    };
+  }
+
+  // EvalPolicy performs a dry-run evaluation of the current policy set.
+  rpc EvalPolicy(EvalPolicyInput) returns (EvalPolicyResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/policies:eval"
+      body: "*"
+    };
+  }
+
+  // --- Audit Log ---
+
+  // QueryAudit queries the append-only audit log with optional filters.
+  rpc QueryAudit(QueryAuditInput) returns (QueryAuditResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/audit"
+    };
+  }
+}
+
+// GetRequestInput carries the request ID for a single-resource fetch.
+message GetRequestInput {
+  string id = 1;
+}
+
+// GetCredentialsInput carries the request ID for credential retrieval.
+message GetCredentialsInput {
+  string request_id = 1;
+}
+
+// ListPoliciesInput is currently empty (no filters yet).
+message ListPoliciesInput {}
+
+// GetPolicyInput carries the policy ID.
+message GetPolicyInput {
+  string id = 1;
+}
+
+// DeletePolicyInput carries the policy ID to delete.
+message DeletePolicyInput {
+  string id = 1;
+}

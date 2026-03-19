@@ -1,0 +1,49 @@
+# jitsudo License
+
+This repository contains code under two different licenses, applied to
+different components. Please read carefully before using or contributing.
+
+## CLI, Provider SDK, and OPA Policy Libraries — Apache License 2.0
+
+The following components are licensed under the Apache License, Version 2.0:
+
+- `cmd/jitsudo/` — CLI binary entrypoint
+- `internal/cli/` — CLI command implementations
+- `internal/providers/` — Provider interface and all cloud provider adapters
+- `pkg/` — Public Go packages (client library, shared types)
+- All Rego policy files under `policies/`
+
+You may use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of these components freely. See `LICENSE-APACHE` for the full text.
+
+## Control Plane Server — Elastic License 2.0 (ELv2)
+
+The following components are licensed under the Elastic License 2.0:
+
+- `cmd/jitsudod/` — Control plane daemon entrypoint
+- `internal/server/` — Control plane implementation (API handlers, auth,
+  policy engine, workflow, audit log, notifications)
+
+The key restriction of ELv2: **you may not provide the software to third
+parties as a hosted or managed service** where the service provides users
+with access to any substantial set of the features or functionality of the
+software.
+
+Self-hosted deployment for your own organization's use is unrestricted.
+See `LICENSE-ELV2` for the full text.
+
+## What This Means in Practice
+
+| Use case | Permitted? |
+|----------|-----------|
+| An SRE downloading and self-hosting jitsudo for their team | Yes |
+| A company running jitsudo internally across their entire org | Yes |
+| A startup building their platform security on top of jitsudo | Yes |
+| A consulting firm deploying jitsudo for a client's internal use | Yes |
+| A cloud provider offering "Managed jitsudo" as a billable service | No |
+| A SaaS company offering jitsudo-as-a-service to multiple customers | No |
+
+## Questions?
+
+If you have questions about licensing, open an issue or contact the maintainers
+via the security contact in `SECURITY.md`.

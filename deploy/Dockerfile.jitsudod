@@ -1,0 +1,24 @@
+# Build stage
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /build
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-w -s" \
+    -o /jitsudod \
+    ./cmd/jitsudod
+
+# Runtime stage
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /jitsudod /jitsudod
+
+EXPOSE 8080 8443
+
+ENTRYPOINT ["/jitsudod"]
