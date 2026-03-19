@@ -4,12 +4,18 @@ version: "3.9"
 # Starts: jitsudod control plane, PostgreSQL, and dex (mock OIDC provider).
 #
 # Usage:
-#   make docker-up    # start
+#   make docker-up    # start all services (full Docker stack)
 #   make docker-down  # stop
 #   make docker-logs  # tail logs
 #
-# After starting, configure the CLI:
-#   jitsudo login --provider http://localhost:5556/dex
+# NOTE: For local development it is easier to run jitsudod on the host:
+#   make dev-deps     # start only postgres + dex
+#   make dev-server   # run jitsudod on the host
+#
+# This avoids an OIDC issuer URL mismatch: dex issues tokens with
+# iss=http://localhost:5556/dex but jitsudod inside Docker cannot resolve
+# localhost:5556. If you need the full Docker stack, you must update
+# JITSUDOD_OIDC_ISSUER below AND dex-config.yaml issuer to match.
 
 services:
   postgres:

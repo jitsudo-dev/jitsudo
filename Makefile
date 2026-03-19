@@ -5,7 +5,7 @@ MODULE       := github.com/jitsudo-dev/jitsudo
 VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS      := -ldflags "-X $(MODULE)/internal/version.Version=$(VERSION)"
 
-.PHONY: all build build-cli build-server test lint proto docker-up docker-down clean help
+.PHONY: all build build-cli build-server test lint proto docker-up docker-down dev-deps dev-server clean help
 
 all: build
 
@@ -50,7 +50,20 @@ proto-lint:
 proto-breaking:
 	buf breaking --against '.git#branch=main'
 
-## docker-up: Start local development environment (jitsudod + PostgreSQL + dex)
+## dev-deps: Start only PostgreSQL and dex (run jitsudod on the host with make dev-server)
+dev-deps:
+	docker compose -f deploy/docker-compose.yaml up -d postgres dex
+
+## dev-server: Build and run jitsudod on the host against local docker deps
+dev-server: build-server
+	JITSUDOD_DATABASE_URL=postgres://jitsudo:jitsudo@localhost:5432/jitsudo?sslmode=disable \
+	JITSUDOD_OIDC_ISSUER=http://localhost:5556/dex \
+	JITSUDOD_OIDC_CLIENT_ID=jitsudo-server \
+	JITSUDOD_HTTP_ADDR=:8080 \
+	JITSUDOD_GRPC_ADDR=:8443 \
+	$(SERVER_BINARY)
+
+## docker-up: Start full local environment in Docker (jitsudod + PostgreSQL + dex)
 docker-up:
 	docker compose -f deploy/docker-compose.yaml up -d
 
