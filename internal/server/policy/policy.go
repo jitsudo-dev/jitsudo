@@ -12,16 +12,16 @@ import (
 	"github.com/open-policy-agent/opa/v1/rego"
 	"github.com/rs/zerolog/log"
 
+	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
 	"github.com/jitsudo-dev/jitsudo/internal/server/auth"
 	"github.com/jitsudo-dev/jitsudo/internal/store"
-	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
 )
 
 // Engine evaluates OPA eligibility and approval policies loaded from PostgreSQL.
 type Engine struct {
 	store *store.Store
 
-	mu              sync.RWMutex
+	mu               sync.RWMutex
 	eligibilityQuery *rego.PreparedEvalQuery
 	approvalQuery    *rego.PreparedEvalQuery
 }

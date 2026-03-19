@@ -83,7 +83,7 @@ func printRequest(out io.Writer, r *jitsudov1alpha1.ElevationRequest) {
 	fmt.Fprintf(out, "Provider:  %s\n", r.GetProvider())
 	fmt.Fprintf(out, "Role:      %s\n", r.GetRole())
 	fmt.Fprintf(out, "Scope:     %s\n", r.GetResourceScope())
-	fmt.Fprintf(out, "Duration:  %s\n", (time.Duration(r.GetDurationSeconds())*time.Second).String())
+	fmt.Fprintf(out, "Duration:  %s\n", (time.Duration(r.GetDurationSeconds()) * time.Second).String())
 	fmt.Fprintf(out, "Reason:    %s\n", r.GetReason())
 	if r.GetApproverIdentity() != "" {
 		fmt.Fprintf(out, "Approver:  %s\n", r.GetApproverIdentity())

@@ -49,9 +49,9 @@ func newDenyCmd() *cobra.Command {
 	var reason string
 
 	cmd := &cobra.Command{
-		Use:   "deny <request-id>",
-		Short: "Deny a pending elevation request",
-		Args:  cobra.ExactArgs(1),
+		Use:     "deny <request-id>",
+		Short:   "Deny a pending elevation request",
+		Args:    cobra.ExactArgs(1),
 		Example: `  jitsudo deny req_01J8KZ... --reason "Not authorized for production access"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

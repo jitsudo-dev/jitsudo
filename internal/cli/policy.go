@@ -50,8 +50,8 @@ func newPolicyApplyCmd() *cobra.Command {
 	var file string
 
 	cmd := &cobra.Command{
-		Use:   "apply",
-		Short: "Create or update a policy from a Rego file",
+		Use:     "apply",
+		Short:   "Create or update a policy from a Rego file",
 		Example: `  jitsudo policy apply -f eligibility.rego`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "policy apply: not yet implemented")
@@ -81,8 +81,8 @@ func newPolicyEvalCmd() *cobra.Command {
 	var input string
 
 	cmd := &cobra.Command{
-		Use:   "eval",
-		Short: "Dry-run policy evaluation against the current policy set",
+		Use:     "eval",
+		Short:   "Dry-run policy evaluation against the current policy set",
 		Example: `  jitsudo policy eval --input '{"role":"prod-infra-admin","provider":"aws","user":{"groups":["sre-oncall"]}}'`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "policy eval: not yet implemented")
