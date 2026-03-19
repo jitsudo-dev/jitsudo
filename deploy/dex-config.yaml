@@ -25,6 +25,11 @@ staticClients:
     public: true  # Public client — no secret required for device flow
     redirectURIs:
       - urn:ietf:wg:oauth:2.0:oob
+      - /device/callback
+      - http://localhost:9999/callback
+    grantTypes:
+      - password
+      - urn:ietf:params:oauth:grant-type:device_code
 
   - id: jitsudo-server
     name: jitsudo Server
@@ -37,14 +42,14 @@ staticClients:
 enablePasswordDB: true
 staticPasswords:
   - email: alice@example.com
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"  # password
+    hash: "$2a$10$zXmGsVJE7vHsvJkaDoJTFemINJ60ed9JKtB2tXMNC6tMHW7IPD7F2"  # password
     username: alice
     userID: "alice-id-001"
   - email: bob@example.com
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"  # password
+    hash: "$2a$10$zXmGsVJE7vHsvJkaDoJTFemINJ60ed9JKtB2tXMNC6tMHW7IPD7F2"  # password
     username: bob
     userID: "bob-id-001"
   - email: charlie@example.com
-    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4u"  # password
+    hash: "$2a$10$zXmGsVJE7vHsvJkaDoJTFemINJ60ed9JKtB2tXMNC6tMHW7IPD7F2"  # password
     username: charlie
     userID: "charlie-id-001"

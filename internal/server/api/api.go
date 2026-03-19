@@ -173,7 +173,7 @@ func (h *Handler) ApplyPolicy(ctx context.Context, in *jitsudov1alpha1.ApplyPoli
 		Type:        protoPolicyTypeToStore(in.GetType()),
 		Rego:        in.GetRego(),
 		Description: in.GetDescription(),
-		Enabled:     true,
+		Enabled:     in.GetEnabled(),
 		UpdatedBy:   identity.Email,
 	}
 	saved, err := h.store.UpsertPolicy(ctx, row)

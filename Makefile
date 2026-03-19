@@ -58,7 +58,7 @@ dev-deps:
 dev-server: build-server
 	JITSUDOD_DATABASE_URL=postgres://jitsudo:jitsudo@localhost:5432/jitsudo?sslmode=disable \
 	JITSUDOD_OIDC_ISSUER=http://localhost:5556/dex \
-	JITSUDOD_OIDC_CLIENT_ID=jitsudo-server \
+	JITSUDOD_OIDC_CLIENT_ID=jitsudo-cli \
 	JITSUDOD_HTTP_ADDR=:8080 \
 	JITSUDOD_GRPC_ADDR=:8443 \
 	$(SERVER_BINARY)

@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // AuditEventRow is a row from the audit_events table.
@@ -37,8 +39,26 @@ type AuditFilter struct {
 
 // AppendAuditEvent appends an event to the audit log, computing the hash chain.
 // The transaction is serializable to guarantee the hash chain is consistent
-// under concurrent appends.
+// under concurrent appends. On a serialization conflict (SQLSTATE 40001) the
+// operation is retried up to 5 times with brief exponential backoff.
 func (s *Store) AppendAuditEvent(ctx context.Context, e *AuditEventRow) (*AuditEventRow, error) {
+	const maxAttempts = 5
+	for attempt := range maxAttempts {
+		result, err := s.appendAuditEventOnce(ctx, e)
+		if err == nil {
+			return result, nil
+		}
+		if !isSerializationError(err) || attempt == maxAttempts-1 {
+			return nil, err
+		}
+		// Brief backoff before retry (10 ms, 20 ms, 30 ms, 40 ms).
+		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+	}
+	panic("unreachable")
+}
+
+// appendAuditEventOnce performs a single serializable append attempt.
+func (s *Store) appendAuditEventOnce(ctx context.Context, e *AuditEventRow) (*AuditEventRow, error) {
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return nil, fmt.Errorf("store: AppendAuditEvent begin: %w", err)
@@ -81,6 +101,13 @@ func (s *Store) AppendAuditEvent(ctx context.Context, e *AuditEventRow) (*AuditE
 	e.PrevHash = prevHash
 	e.Hash = hash
 	return e, nil
+}
+
+// isSerializationError reports whether err is a PostgreSQL serialization failure
+// (SQLSTATE 40001), which indicates a serializable transaction must be retried.
+func isSerializationError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "40001"
 }
 
 // QueryAuditEvents returns audit events matching the filter.
