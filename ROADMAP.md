@@ -45,12 +45,12 @@ Goal: A minimal end-to-end flow working locally against the mock provider.
 
 ## Milestone 3: Production Readiness (Current)
 
-- [ ] Helm chart (`jitsudo/helm-charts`)
-- [ ] `jitsudo server init` bootstrap command
-- [ ] mTLS for gRPC (TLS deferred from Milestone 1)
+- [x] Helm chart (`helm/jitsudo/` in main repo, postgresql subchart included)
+- [x] `jitsudo server init` bootstrap command
+- [x] mTLS for gRPC (server-only TLS and mutual TLS via TLSConfig)
+- [x] Integration test suite (LocalStack for AWS, envtest for Kubernetes)
+- [x] `jitsudo server` admin subcommands (status, version, reload-policies)
 - [ ] Comprehensive documentation site (jitsudo.dev)
-- [ ] Integration test suite (LocalStack + kind + dex)
-- [ ] `jitsudo server` admin subcommands (status, reload-policies)
 
 ## Milestone 4: Ecosystem
 

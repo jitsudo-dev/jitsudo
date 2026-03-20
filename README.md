@@ -64,7 +64,10 @@ jitsudo shell <id>             Open an elevated interactive shell
 jitsudo revoke <id>            Revoke an active elevation early
 jitsudo audit                  Query the audit log
 jitsudo policy                 Manage OPA/Rego policies (admin)
-jitsudo server                 Control plane management
+jitsudo server init            Bootstrap a new control plane instance
+jitsudo server status          Check control plane health
+jitsudo server version         Print server version and API compatibility
+jitsudo server reload-policies Trigger OPA policy engine reload
 ```
 
 ## Architecture
