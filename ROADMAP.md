@@ -29,21 +29,21 @@ Goal: A minimal end-to-end flow working locally against the mock provider.
 - [x] `pkg/client` Go client library
 - [x] Two-stage Dockerfile + CI proto generation step
 
-## Milestone 2: Full Provider Coverage (Current)
+## Milestone 2: Full Provider Coverage ✓
 
-- [ ] AWS provider (STS AssumeRole + session tagging)
-- [ ] Azure provider (RBAC role assignment via Microsoft Graph)
-- [ ] GCP provider (IAM conditional role binding)
-- [ ] Kubernetes provider (ClusterRoleBinding with TTL annotation)
-- [ ] `jitsudo shell` — Interactive elevated shell
-- [ ] `jitsudo revoke` — Early revocation before natural expiry
-- [ ] `jitsudo audit` — Query audit log from the CLI with filtering
-- [ ] `jitsudo policy` — CRUD + dry-run policy evaluation from the CLI
-- [ ] Break-glass mode (bypass approval with immediate alerting)
-- [ ] Slack notification integration
-- [ ] Email (SMTP) notification integration
+- [x] AWS provider (STS AssumeRole + session tagging)
+- [x] Azure provider (RBAC role assignment via Microsoft Graph)
+- [x] GCP provider (IAM conditional role binding)
+- [x] Kubernetes provider (ClusterRoleBinding with TTL annotation)
+- [x] `jitsudo shell` — Interactive elevated shell
+- [x] `jitsudo revoke` — Early revocation before natural expiry
+- [x] `jitsudo audit` — Query audit log from the CLI with filtering
+- [x] `jitsudo policy` — CRUD + dry-run policy evaluation from the CLI
+- [x] Break-glass mode (bypass approval with immediate alerting)
+- [x] Slack notification integration
+- [x] Email (SMTP) notification integration
 
-## Milestone 3: Production Readiness
+## Milestone 3: Production Readiness (Current)
 
 - [ ] Helm chart (`jitsudo/helm-charts`)
 - [ ] `jitsudo server init` bootstrap command
