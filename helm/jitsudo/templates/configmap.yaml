@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "jitsudo.fullname" . }}
+  labels:
+    {{- include "jitsudo.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      http_addr: {{ .Values.config.server.httpAddr | quote }}
+      grpc_addr: {{ .Values.config.server.grpcAddr | quote }}
+
+    auth:
+      oidc_issuer: {{ .Values.config.auth.oidcIssuer | quote }}
+      client_id: {{ .Values.config.auth.clientId | quote }}
+
+    {{- if .Values.config.tls.enabled }}
+    tls:
+      cert_file: /etc/jitsudo/tls/tls.crt
+      key_file: /etc/jitsudo/tls/tls.key
+      {{- if .Values.config.tls.caFile }}
+      ca_file: {{ .Values.config.tls.caFile | quote }}
+      {{- end }}
+    {{- end }}
+
+    providers:
+      {{- if .Values.config.providers.aws.enabled }}
+      aws:
+        mode: {{ .Values.config.providers.aws.mode | quote }}
+        region: {{ .Values.config.providers.aws.region | quote }}
+        role_arn_template: {{ .Values.config.providers.aws.roleArnTemplate | quote }}
+        max_duration: {{ .Values.config.providers.aws.maxDuration | quote }}
+        {{- if .Values.config.providers.aws.identityCenterInstanceArn }}
+        identity_center_instance_arn: {{ .Values.config.providers.aws.identityCenterInstanceArn | quote }}
+        identity_center_store_id: {{ .Values.config.providers.aws.identityCenterStoreId | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.config.providers.gcp.enabled }}
+      gcp:
+        organization_id: {{ .Values.config.providers.gcp.organizationId | quote }}
+        credentials_source: {{ .Values.config.providers.gcp.credentialsSource | quote }}
+        max_duration: {{ .Values.config.providers.gcp.maxDuration | quote }}
+        condition_title_prefix: {{ .Values.config.providers.gcp.conditionTitlePrefix | quote }}
+      {{- end }}
+      {{- if .Values.config.providers.azure.enabled }}
+      azure:
+        tenant_id: {{ .Values.config.providers.azure.tenantId | quote }}
+        default_subscription_id: {{ .Values.config.providers.azure.defaultSubscriptionId | quote }}
+        client_id: {{ .Values.config.providers.azure.clientId | quote }}
+        credentials_source: {{ .Values.config.providers.azure.credentialsSource | quote }}
+        max_duration: {{ .Values.config.providers.azure.maxDuration | quote }}
+      {{- end }}
+      {{- if .Values.config.providers.kubernetes.enabled }}
+      kubernetes:
+        {{- if .Values.config.providers.kubernetes.kubeconfig }}
+        kubeconfig: {{ .Values.config.providers.kubernetes.kubeconfig | quote }}
+        {{- end }}
+        default_namespace: {{ .Values.config.providers.kubernetes.defaultNamespace | quote }}
+        max_duration: {{ .Values.config.providers.kubernetes.maxDuration | quote }}
+        managed_label: {{ .Values.config.providers.kubernetes.managedLabel | quote }}
+      {{- end }}
+
+    notifications:
+      {{- if .Values.config.notifications.slack.enabled }}
+      slack:
+        webhook_url: ""  # supplied via JITSUDOD_SLACK_WEBHOOK_URL env var
+        channel: {{ .Values.config.notifications.slack.channel | quote }}
+        mention_on_break_glass: {{ .Values.config.notifications.slack.mentionOnBreakGlass | quote }}
+      {{- end }}
+      {{- if .Values.config.notifications.smtp.enabled }}
+      smtp:
+        host: {{ .Values.config.notifications.smtp.host | quote }}
+        port: {{ .Values.config.notifications.smtp.port }}
+        username: {{ .Values.config.notifications.smtp.username | quote }}
+        password: ""  # supplied via JITSUDOD_SMTP_PASSWORD env var
+        from: {{ .Values.config.notifications.smtp.from | quote }}
+        to:
+          {{- range .Values.config.notifications.smtp.to }}
+          - {{ . | quote }}
+          {{- end }}
+      {{- end }}
+
+    log:
+      level: {{ .Values.config.log.level | quote }}
+      format: {{ .Values.config.log.format | quote }}

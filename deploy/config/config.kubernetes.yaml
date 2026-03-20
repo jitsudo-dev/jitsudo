@@ -1,0 +1,45 @@
+# jitsudod configuration — Kubernetes provider only.
+# Use this as a starting point if your team primarily manages Kubernetes RBAC.
+#
+# Prerequisites:
+#   1. Create a ClusterRole named jitsudo-manager with:
+#        apiGroups: ["rbac.authorization.k8s.io"]
+#        resources: ["clusterrolebindings", "rolebindings"]
+#        verbs: ["create", "get", "list", "delete"]
+#   2. Bind that ClusterRole to the jitsudod ServiceAccount.
+#   3. Pre-create the target ClusterRoles (e.g., "view", "edit", "cluster-admin")
+#      that jitsudo will bind to requesting users.
+#
+# Documentation: https://jitsudo.dev/docs/configuration/providers/kubernetes
+
+database:
+  url: "postgres://jitsudo:password@db:5432/jitsudo?sslmode=require"
+
+auth:
+  oidc_issuer: "https://your-idp.example.com"
+  client_id: "jitsudo-server"
+
+providers:
+  kubernetes:
+    # kubeconfig: path to a kubeconfig file. Leave empty when running inside
+    # the cluster — jitsudod will use the pod's service account automatically.
+    kubeconfig: ""
+
+    # default_namespace is used for namespaced RoleBindings when the elevation
+    # request's ResourceScope is empty. If this is also empty, a cluster-scoped
+    # ClusterRoleBinding is created.
+    default_namespace: "default"
+
+    # max_duration caps the elevation window server-side.
+    # The expiry sweeper removes bindings after their TTL annotation passes.
+    max_duration: "1h"
+
+    # managed_label is applied to every binding jitsudo creates. The expiry
+    # sweeper uses this label to efficiently list and clean up expired bindings.
+    managed_label: "jitsudo.dev/managed"
+
+notifications:
+  slack:
+    webhook_url: ""     # supply via JITSUDOD_SLACK_WEBHOOK_URL
+    channel: "#platform-access-requests"
+    mention_on_break_glass: "<!channel>"

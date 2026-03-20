@@ -74,7 +74,9 @@ func (s *Store) appendAuditEventOnce(ctx context.Context, e *AuditEventRow) (*Au
 		return nil, fmt.Errorf("store: AppendAuditEvent fetch prev hash: %w", err)
 	}
 
-	ts := time.Now().UTC()
+	// Truncate to microsecond precision to match PostgreSQL TIMESTAMP storage,
+	// so the hash computed here equals the hash recomputed from the stored timestamp.
+	ts := time.Now().UTC().Truncate(time.Microsecond)
 	hash := computeHash(prevHash, ts, e)
 
 	var id int64

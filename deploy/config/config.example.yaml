@@ -1,0 +1,172 @@
+# jitsudod control plane — full annotated configuration reference
+#
+# Copy this file, remove sections you don't need, and supply secrets via
+# environment variables (they always override values here).
+#
+# Usage:
+#   jitsudod --config /etc/jitsudo/config.yaml
+#   JITSUDOD_CONFIG=/etc/jitsudo/config.yaml jitsudod
+#
+# Documentation: https://jitsudo.dev/docs/configuration/server
+
+# ── Server ────────────────────────────────────────────────────────────────────
+server:
+  # HTTP address for the REST gateway (grpc-gateway).
+  # Override: JITSUDOD_HTTP_ADDR
+  http_addr: ":8080"
+
+  # gRPC address for the native API and CLI.
+  # Override: JITSUDOD_GRPC_ADDR
+  grpc_addr: ":8443"
+
+# ── Database ──────────────────────────────────────────────────────────────────
+database:
+  # PostgreSQL connection DSN. Supply the password via env var in production.
+  # Override: JITSUDOD_DATABASE_URL
+  url: "postgres://jitsudo:password@localhost:5432/jitsudo?sslmode=require"
+
+# ── Auth (OIDC) ───────────────────────────────────────────────────────────────
+auth:
+  # OIDC issuer URL. Must match the `iss` claim in tokens issued to the CLI.
+  # Override: JITSUDOD_OIDC_ISSUER
+  oidc_issuer: "https://your-idp.example.com"
+
+  # OIDC client ID registered with your identity provider for jitsudod.
+  # Override: JITSUDOD_OIDC_CLIENT_ID
+  client_id: "jitsudo-server"
+
+# ── TLS ───────────────────────────────────────────────────────────────────────
+# Leave this section empty (or omit it) for insecure local development.
+# Set cert_file + key_file for server TLS.
+# Also set ca_file to enable mTLS (client certificate verification).
+#
+# Overrides: JITSUDOD_TLS_CERT_FILE, JITSUDOD_TLS_KEY_FILE, JITSUDOD_TLS_CA_FILE
+tls:
+  cert_file: "/etc/jitsudo/tls.crt"
+  key_file:  "/etc/jitsudo/tls.key"
+  ca_file:   ""  # non-empty enables mTLS
+
+# ── Providers ─────────────────────────────────────────────────────────────────
+# Each provider is optional. Omit or comment out sections you don't use.
+# jitsudod logs a warning and skips any provider that fails to initialise.
+# Credentials are NEVER stored here — use the ambient credential chain
+# (instance role, workload identity, service account, etc.).
+
+providers:
+
+  # AWS — STS AssumeRole or IAM Identity Center
+  # Required IAM permissions for the jitsudod role:
+  #   sts:AssumeRole, iam:PutRolePolicy on the target roles.
+  aws:
+    # mode: "sts_assume_role" (default) or "identity_center"
+    mode: "sts_assume_role"
+
+    # Primary AWS region.
+    region: "us-east-1"
+
+    # role_arn_template constructs the role ARN from the request.
+    # {scope} = ResourceScope (AWS account ID)
+    # {role}  = RoleName
+    role_arn_template: "arn:aws:iam::{scope}:role/jitsudo-{role}"
+
+    # max_duration caps the elevation window server-side (STS hard max is 12h).
+    max_duration: "4h"
+
+    # Identity Center fields — only required when mode is "identity_center".
+    # identity_center_instance_arn: "arn:aws:sso:::instance/ssoins-xxxxxxxxxx"
+    # identity_center_store_id: "d-xxxxxxxxxx"
+
+  # GCP — IAM conditional role bindings
+  # Required permissions for the jitsudod service account:
+  #   resourcemanager.projects.getIamPolicy
+  #   resourcemanager.projects.setIamPolicy
+  gcp:
+    # GCP organization ID (numeric string). Used for org-level scope requests.
+    organization_id: "123456789012"
+
+    # credentials_source: "workload_identity_federation" (recommended on GKE),
+    #                     "service_account_key", or "application_default".
+    credentials_source: "workload_identity_federation"
+
+    # max_duration caps the elevation window (GCP IAM bindings have no hard max,
+    # but the expiry sweeper enforces this limit).
+    max_duration: "8h"
+
+    # condition_title_prefix is prepended to IAM condition titles.
+    # Defaults to "jitsudo" → e.g., "jitsudo-<requestID>".
+    condition_title_prefix: "jitsudo"
+
+  # Azure — RBAC role assignments via ARM
+  # Required permissions for the jitsudod service principal:
+  #   Microsoft.Authorization/roleAssignments/write
+  #   Microsoft.Authorization/roleAssignments/delete
+  #   Microsoft.Graph/User.Read.All (to resolve user principal IDs)
+  azure:
+    # Entra ID (Azure AD) tenant ID.
+    tenant_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+    # Default subscription ID used when no resource scope is provided.
+    default_subscription_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+    # Client ID of the jitsudod service principal or managed identity.
+    client_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+    # credentials_source: "workload_identity" (AKS managed identity, recommended)
+    #                     or "client_secret" (supply AZURE_CLIENT_SECRET env var).
+    credentials_source: "workload_identity"
+
+    # max_duration caps the elevation window.
+    max_duration: "4h"
+
+  # Kubernetes — ClusterRoleBinding / RoleBinding with TTL annotation
+  # The jitsudod ServiceAccount needs:
+  #   rbac.authorization.k8s.io: [create, get, delete] on clusterrolebindings and rolebindings.
+  kubernetes:
+    # kubeconfig path. Leave empty to use in-cluster service account (recommended).
+    kubeconfig: ""
+
+    # default_namespace for namespaced RoleBindings when ResourceScope is empty.
+    # If also empty, a ClusterRoleBinding is created instead.
+    default_namespace: "default"
+
+    # max_duration caps the elevation window.
+    max_duration: "1h"
+
+    # managed_label is applied to all jitsudo-created bindings for sweeper queries.
+    # Defaults to "jitsudo.dev/managed".
+    managed_label: "jitsudo.dev/managed"
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+notifications:
+
+  # Slack incoming webhook. Supply webhook_url via env var in production.
+  # Override: JITSUDOD_SLACK_WEBHOOK_URL
+  slack:
+    webhook_url: "https://hooks.slack.com/services/<WORKSPACE_ID>/<CHANNEL_ID>/<TOKEN>"
+
+    # channel overrides the webhook's default channel. Leave empty to use the default.
+    channel: "#sre-access-requests"
+
+    # mention_on_break_glass is prepended to break-glass alerts (e.g., "<!channel>").
+    mention_on_break_glass: "<!channel>"
+
+  # SMTP email notifications.
+  # Override password: JITSUDOD_SMTP_PASSWORD
+  smtp:
+    host: "smtp.example.com"
+    port: 587             # 587 = STARTTLS, 465 = TLS
+    username: "jitsudo@example.com"
+    password: ""          # supply via JITSUDOD_SMTP_PASSWORD
+    from: "jitsudo@example.com"
+    to:
+      - "sre-team@example.com"
+      - "security@example.com"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+log:
+  # level: "debug", "info" (default), "warn", "error"
+  # Override: JITSUDOD_LOG_LEVEL
+  level: "info"
+
+  # format: "json" (default, structured) or "text" (human-readable dev output)
+  format: "json"

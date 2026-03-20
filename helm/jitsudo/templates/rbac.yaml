@@ -1,0 +1,29 @@
+{{- if .Values.config.providers.kubernetes.enabled }}
+# When the Kubernetes provider is enabled, jitsudod needs permission to
+# create and delete RoleBindings and ClusterRoleBindings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "jitsudo.fullname" . }}-manager
+  labels:
+    {{- include "jitsudo.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings", "rolebindings"]
+    verbs: ["create", "get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "jitsudo.fullname" . }}-manager
+  labels:
+    {{- include "jitsudo.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "jitsudo.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "jitsudo.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

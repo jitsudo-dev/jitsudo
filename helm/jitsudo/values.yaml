@@ -1,0 +1,173 @@
+# Default values for jitsudo.
+# See deploy/config/config.example.yaml for field-level documentation.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/jitsudo-dev/jitsudo
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# ── jitsudod configuration ────────────────────────────────────────────────────
+config:
+  server:
+    httpAddr: ":8080"
+    grpcAddr: ":8443"
+
+  database:
+    # Inline connection URL (not recommended for production — use existingSecret).
+    url: ""
+    # Name of an existing Kubernetes Secret with a DATABASE_URL key.
+    # When set, url above is ignored.
+    existingSecret: ""
+
+  auth:
+    oidcIssuer: ""
+    clientId: "jitsudo-server"
+
+  tls:
+    enabled: false
+    # Name of a Kubernetes TLS secret (keys: tls.crt, tls.key).
+    secretName: ""
+    # Path to a CA cert for mTLS. Supply via a ConfigMap or Secret volume.
+    caFile: ""
+
+  providers:
+    aws:
+      enabled: false
+      mode: "sts_assume_role"
+      region: "us-east-1"
+      roleArnTemplate: "arn:aws:iam::{scope}:role/jitsudo-{role}"
+      maxDuration: "4h"
+      identityCenterInstanceArn: ""
+      identityCenterStoreId: ""
+
+    gcp:
+      enabled: false
+      organizationId: ""
+      credentialsSource: "workload_identity_federation"
+      maxDuration: "8h"
+      conditionTitlePrefix: "jitsudo"
+
+    azure:
+      enabled: false
+      tenantId: ""
+      defaultSubscriptionId: ""
+      clientId: ""
+      credentialsSource: "workload_identity"
+      maxDuration: "4h"
+
+    kubernetes:
+      enabled: false
+      kubeconfig: ""
+      defaultNamespace: "default"
+      maxDuration: "1h"
+      managedLabel: "jitsudo.dev/managed"
+
+  notifications:
+    slack:
+      enabled: false
+      # Supply via existingSecret (key: JITSUDOD_SLACK_WEBHOOK_URL) or inline.
+      webhookUrl: ""
+      existingSecret: ""
+      channel: ""
+      mentionOnBreakGlass: "<!channel>"
+
+    smtp:
+      enabled: false
+      host: ""
+      port: 587
+      username: ""
+      # Supply via existingSecret (key: JITSUDOD_SMTP_PASSWORD) or inline.
+      password: ""
+      existingSecret: ""
+      from: ""
+      to: []
+
+  log:
+    level: "info"
+    format: "json"
+
+# ── Services ──────────────────────────────────────────────────────────────────
+service:
+  http:
+    type: ClusterIP
+    port: 8080
+  grpc:
+    type: ClusterIP
+    port: 8443
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: jitsudo.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+# ── Autoscaling ───────────────────────────────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+# ── Pod Disruption Budget ─────────────────────────────────────────────────────
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# ── Node selection ────────────────────────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── PostgreSQL subchart ───────────────────────────────────────────────────────
+# Set postgresql.enabled=false and supply config.database.existingSecret for
+# production deployments using an external managed database.
+postgresql:
+  enabled: true
+  auth:
+    username: jitsudo
+    password: jitsudo
+    database: jitsudo
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi

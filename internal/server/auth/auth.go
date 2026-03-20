@@ -103,3 +103,10 @@ func FromContext(ctx context.Context) *Identity {
 	v, _ := ctx.Value(contextKey{}).(*Identity)
 	return v
 }
+
+// WithIdentity returns a copy of ctx with id injected as the authenticated
+// identity. Intended for use in tests and middleware that pre-validates tokens
+// outside the standard gRPC interceptor path.
+func WithIdentity(ctx context.Context, id *Identity) context.Context {
+	return context.WithValue(ctx, contextKey{}, id)
+}

@@ -3,6 +3,7 @@ syntax = "proto3";
 package jitsudo.v1alpha1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 import "jitsudo/v1alpha1/audit.proto";
 import "jitsudo/v1alpha1/policies.proto";
 import "jitsudo/v1alpha1/requests.proto";
@@ -114,6 +115,17 @@ service JitsudoService {
       get: "/api/v1alpha1/audit"
     };
   }
+
+  // --- Admin ---
+
+  // ReloadPolicies triggers the OPA policy engine to reload all enabled
+  // policies from the database. Requires authentication.
+  rpc ReloadPolicies(google.protobuf.Empty) returns (ReloadPoliciesResponse) {
+    option (google.api.http) = {
+      post: "/api/v1alpha1/admin/reload-policies"
+      body: "*"
+    };
+  }
 }
 
 // GetRequestInput carries the request ID for a single-resource fetch.
@@ -137,4 +149,10 @@ message GetPolicyInput {
 // DeletePolicyInput carries the policy ID to delete.
 message DeletePolicyInput {
   string id = 1;
+}
+
+// ReloadPoliciesResponse is returned after a successful policy reload.
+message ReloadPoliciesResponse {
+  // policies_loaded is the count of enabled policies now active in the engine.
+  int32 policies_loaded = 1;
 }

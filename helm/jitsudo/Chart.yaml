@@ -1,0 +1,26 @@
+apiVersion: v2
+name: jitsudo
+description: JIT privileged access management for AWS, Azure, GCP, and Kubernetes
+type: application
+version: 0.1.0
+appVersion: "dev"
+home: https://jitsudo.dev
+sources:
+  - https://github.com/jitsudo-dev/jitsudo
+keywords:
+  - security
+  - privileged-access
+  - pam
+  - just-in-time
+  - aws
+  - gcp
+  - azure
+  - kubernetes
+maintainers:
+  - name: jitsudo-dev
+    url: https://github.com/jitsudo-dev
+dependencies:
+  - name: postgresql
+    version: "16.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled

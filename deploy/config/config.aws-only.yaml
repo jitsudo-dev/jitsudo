@@ -1,0 +1,45 @@
+# jitsudod configuration — AWS provider only.
+# Use this as a starting point if your team only uses AWS.
+#
+# Prerequisites:
+#   1. Attach this IAM policy to the jitsudod instance/task role:
+#        sts:AssumeRole     on arn:aws:iam::*:role/jitsudo-*
+#        iam:PutRolePolicy  on arn:aws:iam::*:role/jitsudo-*
+#   2. Pre-create one IAM role per (account, permission-set) pair, named
+#      jitsudo-<role> in each account. Trust the jitsudod instance role.
+#   3. Configure your Rego policies to allow requests targeting those roles.
+#
+# Documentation: https://jitsudo.dev/docs/configuration/providers/aws
+
+database:
+  url: "postgres://jitsudo:password@db:5432/jitsudo?sslmode=require"
+
+auth:
+  oidc_issuer: "https://your-idp.example.com"
+  client_id: "jitsudo-server"
+
+providers:
+  aws:
+    # mode: "sts_assume_role" uses STS directly (all AWS accounts).
+    # Switch to "identity_center" if you centralise access through IAM Identity Center.
+    mode: "sts_assume_role"
+
+    # region is the default region for STS calls and injected as AWS_DEFAULT_REGION.
+    region: "us-east-1"
+
+    # role_arn_template builds the target role ARN.
+    # {scope} → ResourceScope field of the elevation request (typically an AWS account ID).
+    # {role}  → RoleName field of the elevation request.
+    # Example: a request for role="ReadOnly" scope="123456789012" resolves to
+    #   arn:aws:iam::123456789012:role/jitsudo-ReadOnly
+    role_arn_template: "arn:aws:iam::{scope}:role/jitsudo-{role}"
+
+    # max_duration is a server-side cap. STS hard maximum is 12h; minimum is 15m.
+    max_duration: "4h"
+
+notifications:
+  slack:
+    # Supply via env var: JITSUDOD_SLACK_WEBHOOK_URL
+    webhook_url: ""
+    channel: "#cloud-access-requests"
+    mention_on_break_glass: "<!here>"

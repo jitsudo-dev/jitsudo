@@ -7,9 +7,13 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
@@ -24,6 +28,21 @@ type Config struct {
 	Token string
 	// Insecure disables TLS. Use for local development only.
 	Insecure bool
+	// TLS configures certificate-based transport security.
+	// Ignored when Insecure is true.
+	TLS *TLSConfig
+}
+
+// TLSConfig holds client-side TLS credential paths.
+type TLSConfig struct {
+	// CAFile is the path to the CA certificate used to verify the server.
+	// If empty the system certificate pool is used.
+	CAFile string
+	// CertFile and KeyFile enable mTLS (client certificate authentication).
+	CertFile string
+	KeyFile  string
+	// InsecureSkipVerify skips server certificate validation. Dev only.
+	InsecureSkipVerify bool
 }
 
 // Client is an authenticated gRPC client for the jitsudo API.
@@ -41,8 +60,19 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	dialOpts := []grpc.DialOption{
 		grpc.WithUnaryInterceptor(bearerInterceptor(cfg.Token)),
 	}
-	if cfg.Insecure {
+
+	switch {
+	case cfg.Insecure:
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	case cfg.TLS != nil:
+		creds, err := buildClientTLS(cfg.TLS)
+		if err != nil {
+			return nil, fmt.Errorf("client: TLS config: %w", err)
+		}
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
+	default:
+		// No explicit TLS config: use system pool (standard production behaviour).
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
 	}
 
 	conn, err := grpc.NewClient(cfg.ServerURL, dialOpts...)
@@ -74,4 +104,33 @@ func bearerInterceptor(token string) grpc.UnaryClientInterceptor {
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
+}
+
+// buildClientTLS constructs gRPC transport credentials from a TLSConfig.
+func buildClientTLS(cfg *TLSConfig) (credentials.TransportCredentials, error) {
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: cfg.InsecureSkipVerify, //nolint:gosec // intentional for dev use
+	}
+
+	if cfg.CAFile != "" {
+		caPEM, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA file %q: %w", cfg.CAFile, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("parse CA file %q: no valid certificates found", cfg.CAFile)
+		}
+		tlsCfg.RootCAs = pool
+	}
+
+	if cfg.CertFile != "" && cfg.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load client key pair: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	return credentials.NewTLS(tlsCfg), nil
 }

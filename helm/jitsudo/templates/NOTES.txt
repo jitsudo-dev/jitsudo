@@ -1,0 +1,18 @@
+Thank you for installing {{ .Chart.Name }} v{{ .Chart.Version }}.
+
+jitsudod is starting. Check readiness with:
+
+  kubectl rollout status deployment/{{ include "jitsudo.fullname" . }} -n {{ .Release.Namespace }}
+
+Once ready, check health:
+
+  kubectl port-forward svc/{{ include "jitsudo.fullname" . }} 8080:8080 -n {{ .Release.Namespace }}
+  jitsudo server status --server-url http://localhost:8080
+
+Next steps:
+  1. Configure an OIDC provider in values.yaml (config.auth.oidcIssuer)
+  2. Enable the cloud providers you need (config.providers.aws.enabled, etc.)
+  3. Upload your Rego policies: jitsudo policy apply -f policy.rego
+  4. Invite your team: jitsudo login --server <your-server-url>
+
+Documentation: https://jitsudo.dev/docs

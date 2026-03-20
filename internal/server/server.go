@@ -6,14 +6,18 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
@@ -30,6 +34,7 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/server/policy"
 	"github.com/jitsudo-dev/jitsudo/internal/server/workflow"
 	"github.com/jitsudo-dev/jitsudo/internal/store"
+	"github.com/jitsudo-dev/jitsudo/internal/version"
 )
 
 // Config holds the server configuration.
@@ -40,12 +45,25 @@ type Config struct {
 	OIDCIssuer   string // e.g., "http://localhost:5556/dex"
 	OIDCClientID string // e.g., "jitsudo-cli"
 
+	// TLS configures mTLS for the gRPC listener.
+	// Leave zero-value for insecure local development.
+	TLS TLSConfig
+
 	// Notifications configures the optional notification channels.
 	Notifications NotificationsConfig
 
 	// Providers configures the real cloud/infrastructure providers.
 	// Each is optional; nil means the provider is not registered.
 	Providers ProvidersConfig
+}
+
+// TLSConfig holds paths to TLS credentials for the gRPC listener.
+// CertFile + KeyFile enables server TLS. Adding CAFile enables mTLS
+// (server verifies client certificates against the CA).
+type TLSConfig struct {
+	CertFile string
+	KeyFile  string
+	CAFile   string // non-empty enables mTLS client verification
 }
 
 // NotificationsConfig holds optional notifier configurations.
@@ -147,9 +165,32 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("server: gRPC listen on %s: %w", s.cfg.GRPCAddr, err)
 	}
 
-	s.grpcServer = grpc.NewServer(
+	grpcServerOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(verifier.GRPCUnaryInterceptor()),
-	)
+	}
+
+	// Build gateway dial options. The gateway always connects to the loopback
+	// gRPC address, so we configure its credentials to match the server.
+	var gatewayDialOpts []grpc.DialOption
+
+	if s.cfg.TLS.CertFile != "" && s.cfg.TLS.KeyFile != "" {
+		tlsCreds, err := buildServerTLS(s.cfg.TLS)
+		if err != nil {
+			return fmt.Errorf("server: TLS config: %w", err)
+		}
+		grpcServerOpts = append(grpcServerOpts, grpc.Creds(tlsCreds))
+		// Gateway → gRPC loopback: trust the server's own certificate.
+		gatewayCreds, err := buildGatewayTLS(s.cfg.TLS)
+		if err != nil {
+			return fmt.Errorf("server: gateway TLS config: %w", err)
+		}
+		gatewayDialOpts = []grpc.DialOption{grpc.WithTransportCredentials(gatewayCreds)}
+		log.Info().Bool("mtls", s.cfg.TLS.CAFile != "").Msg("jitsudod TLS enabled")
+	} else {
+		gatewayDialOpts = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	}
+
+	s.grpcServer = grpc.NewServer(grpcServerOpts...)
 	jitsudov1alpha1.RegisterJitsudoServiceServer(s.grpcServer, handler)
 
 	grpcErrC := make(chan error, 1)
@@ -162,8 +203,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// ── grpc-gateway HTTP mux ─────────────────────────────────────────────────
 	gwMux := runtime.NewServeMux()
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if err := jitsudov1alpha1.RegisterJitsudoServiceHandlerFromEndpoint(ctx, gwMux, s.cfg.GRPCAddr, dialOpts); err != nil {
+	if err := jitsudov1alpha1.RegisterJitsudoServiceHandlerFromEndpoint(ctx, gwMux, s.cfg.GRPCAddr, gatewayDialOpts); err != nil {
 		return fmt.Errorf("server: gateway registration: %w", err)
 	}
 
@@ -223,6 +263,44 @@ func (s *Server) registerHealthHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, `{"version":"dev","api_versions":["v1alpha1"]}`)
+		_, _ = fmt.Fprintf(w, `{"version":%q,"api_versions":["v1alpha1"]}`, version.Version)
 	})
+}
+
+// buildServerTLS constructs gRPC server credentials from TLSConfig.
+// CAFile non-empty enables mTLS (client certificate verification).
+func buildServerTLS(cfg TLSConfig) (credentials.TransportCredentials, error) {
+	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load key pair: %w", err)
+	}
+	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+	if cfg.CAFile != "" {
+		caPEM, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("parse CA file: no valid certificates found")
+		}
+		tlsCfg.ClientCAs = pool
+		tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+	return credentials.NewTLS(tlsCfg), nil
+}
+
+// buildGatewayTLS constructs gRPC client credentials for the grpc-gateway →
+// gRPC loopback connection. It trusts the server's own certificate so that
+// self-signed certs work without distributing a separate CA bundle.
+func buildGatewayTLS(cfg TLSConfig) (credentials.TransportCredentials, error) {
+	certPEM, err := os.ReadFile(cfg.CertFile)
+	if err != nil {
+		return nil, fmt.Errorf("read server cert for gateway: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		return nil, fmt.Errorf("parse server cert for gateway: no valid certificates found")
+	}
+	return credentials.NewTLS(&tls.Config{RootCAs: pool}), nil
 }

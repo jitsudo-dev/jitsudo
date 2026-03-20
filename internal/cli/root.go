@@ -90,11 +90,28 @@ func newClient(ctx context.Context) (*client.Client, error) {
 		}
 	}
 
-	return client.New(ctx, client.Config{
+	cfg := client.Config{
 		ServerURL: serverURL,
 		Token:     token,
-		Insecure:  true, // TLS deferred to Milestone 2
-	})
+	}
+
+	// TLS configuration from ~/.jitsudo/config.yaml or env.
+	caFile := viper.GetString("tls.ca_file")
+	certFile := viper.GetString("tls.cert_file")
+	keyFile := viper.GetString("tls.key_file")
+
+	if caFile != "" || certFile != "" {
+		cfg.TLS = &client.TLSConfig{
+			CAFile:   caFile,
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		}
+	} else {
+		// Default to insecure for local development until TLS is configured.
+		cfg.Insecure = true
+	}
+
+	return client.New(ctx, cfg)
 }
 
 // initConfig loads configuration from file and environment variables.

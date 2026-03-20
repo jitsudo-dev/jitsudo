@@ -47,6 +47,10 @@ type Config struct {
 	// MaxDuration caps the elevation window the provider will honour.
 	// If zero, no server-side cap is enforced beyond the STS maximum (12h).
 	MaxDuration types.Duration `yaml:"max_duration"`
+
+	// EndpointURL overrides the AWS service endpoint URL.
+	// Used for LocalStack in integration tests. Leave empty in production.
+	EndpointURL string `yaml:"endpoint_url,omitempty"`
 }
 
 // stsAPI is the subset of sts.Client used by this provider (enables test injection).
@@ -77,10 +81,18 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("aws: load config: %w", err)
 	}
+
+	var stsOpts []func(*sts.Options)
+	var iamOpts []func(*iam.Options)
+	if cfg.EndpointURL != "" {
+		stsOpts = append(stsOpts, func(o *sts.Options) { o.BaseEndpoint = &cfg.EndpointURL })
+		iamOpts = append(iamOpts, func(o *iam.Options) { o.BaseEndpoint = &cfg.EndpointURL })
+	}
+
 	return &Provider{
 		cfg:       cfg,
-		stsClient: sts.NewFromConfig(awsCfg),
-		iamClient: iam.NewFromConfig(awsCfg),
+		stsClient: sts.NewFromConfig(awsCfg, stsOpts...),
+		iamClient: iam.NewFromConfig(awsCfg, iamOpts...),
 	}, nil
 }
 

@@ -16,6 +16,40 @@
     "application/json"
   ],
   "paths": {
+    "/api/v1alpha1/admin/reload-policies": {
+      "post": {
+        "summary": "ReloadPolicies triggers the OPA policy engine to reload all enabled\npolicies from the database. Requires authentication.",
+        "operationId": "JitsudoService_ReloadPolicies",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1ReloadPoliciesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
     "/api/v1alpha1/audit": {
       "get": {
         "summary": "QueryAudit queries the append-only audit log with optional filters.",
@@ -977,6 +1011,17 @@
         }
       },
       "description": "QueryAuditResponse wraps a page of audit events."
+    },
+    "v1alpha1ReloadPoliciesResponse": {
+      "type": "object",
+      "properties": {
+        "policiesLoaded": {
+          "type": "integer",
+          "format": "int32",
+          "description": "policies_loaded is the count of enabled policies now active in the engine."
+        }
+      },
+      "description": "ReloadPoliciesResponse is returned after a successful policy reload."
     },
     "v1alpha1RequestState": {
       "type": "string",

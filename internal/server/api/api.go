@@ -7,11 +7,10 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
@@ -23,13 +22,30 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
+// PolicyEngine is the subset of *policy.Engine methods called by Handler.
+type PolicyEngine interface {
+	Reload(ctx context.Context) error
+	EvalRaw(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error)
+}
+
+// dataStore is the subset of *store.Store methods called by Handler.
+type dataStore interface {
+	GetRequest(ctx context.Context, id string) (*store.RequestRow, error)
+	ListRequests(ctx context.Context, f store.ListFilter) ([]*store.RequestRow, error)
+	ListPolicies(ctx context.Context, ptype *store.PolicyType) ([]*store.PolicyRow, error)
+	GetPolicy(ctx context.Context, id string) (*store.PolicyRow, error)
+	UpsertPolicy(ctx context.Context, p *store.PolicyRow) (*store.PolicyRow, error)
+	DeletePolicy(ctx context.Context, id string) error
+	QueryAuditEvents(ctx context.Context, f store.AuditFilter) ([]*store.AuditEventRow, error)
+}
+
 // Handler implements jitsudov1alpha1.JitsudoServiceServer.
 type Handler struct {
 	jitsudov1alpha1.UnimplementedJitsudoServiceServer
 	workflow *workflow.Engine
-	store    *store.Store
+	store    dataStore
 	audit    *audit.Logger
-	policy   *policy.Engine
+	policy   PolicyEngine
 }
 
 // NewHandler wires together the service dependencies.
@@ -213,6 +229,26 @@ func (h *Handler) DeletePolicy(ctx context.Context, in *jitsudov1alpha1.DeletePo
 	return &jitsudov1alpha1.DeletePolicyResponse{}, nil
 }
 
+func (h *Handler) ReloadPolicies(ctx context.Context, _ *emptypb.Empty) (*jitsudov1alpha1.ReloadPoliciesResponse, error) {
+	if auth.FromContext(ctx) == nil {
+		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	if err := h.policy.Reload(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "policy reload: %v", err)
+	}
+	policies, err := h.store.ListPolicies(ctx, nil)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list policies: %v", err)
+	}
+	var enabled int32
+	for _, p := range policies {
+		if p.Enabled {
+			enabled++
+		}
+	}
+	return &jitsudov1alpha1.ReloadPoliciesResponse{PoliciesLoaded: enabled}, nil
+}
+
 func (h *Handler) EvalPolicy(ctx context.Context, in *jitsudov1alpha1.EvalPolicyInput) (*jitsudov1alpha1.EvalPolicyResponse, error) {
 	if auth.FromContext(ctx) == nil {
 		return nil, status.Error(codes.Unauthenticated, "not authenticated")
@@ -383,12 +419,3 @@ func storeErr(err error) error {
 	}
 	return status.Errorf(codes.Internal, "%v", err)
 }
-
-// timePtr is a helper used in timestamp conversions.
-func timePtr(t time.Time) *time.Time {
-	return &t
-}
-
-// Ensure timePtr is referenced (avoids unused warning if not used directly).
-var _ = fmt.Sprintf
-var _ = timePtr
