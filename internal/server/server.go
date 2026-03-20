@@ -18,10 +18,15 @@ import (
 
 	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
+	awsprovider "github.com/jitsudo-dev/jitsudo/internal/providers/aws"
+	azureprovider "github.com/jitsudo-dev/jitsudo/internal/providers/azure"
+	gcpprovider "github.com/jitsudo-dev/jitsudo/internal/providers/gcp"
+	k8sprovider "github.com/jitsudo-dev/jitsudo/internal/providers/kubernetes"
 	"github.com/jitsudo-dev/jitsudo/internal/providers/mock"
 	"github.com/jitsudo-dev/jitsudo/internal/server/api"
 	"github.com/jitsudo-dev/jitsudo/internal/server/audit"
 	"github.com/jitsudo-dev/jitsudo/internal/server/auth"
+	"github.com/jitsudo-dev/jitsudo/internal/server/notifications"
 	"github.com/jitsudo-dev/jitsudo/internal/server/policy"
 	"github.com/jitsudo-dev/jitsudo/internal/server/workflow"
 	"github.com/jitsudo-dev/jitsudo/internal/store"
@@ -34,6 +39,28 @@ type Config struct {
 	DatabaseURL  string // PostgreSQL DSN
 	OIDCIssuer   string // e.g., "http://localhost:5556/dex"
 	OIDCClientID string // e.g., "jitsudo-cli"
+
+	// Notifications configures the optional notification channels.
+	Notifications NotificationsConfig
+
+	// Providers configures the real cloud/infrastructure providers.
+	// Each is optional; nil means the provider is not registered.
+	Providers ProvidersConfig
+}
+
+// NotificationsConfig holds optional notifier configurations.
+type NotificationsConfig struct {
+	Slack *notifications.SlackConfig `yaml:"slack"`
+	SMTP  *notifications.SMTPConfig  `yaml:"smtp"`
+}
+
+// ProvidersConfig holds optional cloud provider configurations.
+// Providers are only registered when their configuration is non-nil.
+type ProvidersConfig struct {
+	AWS        *awsprovider.Config        `yaml:"aws"`
+	GCP        *gcpprovider.Config        `yaml:"gcp"`
+	Azure      *azureprovider.Config      `yaml:"azure"`
+	Kubernetes *k8sprovider.Config        `yaml:"kubernetes"`
 }
 
 // Server is the jitsudod control plane.
@@ -68,10 +95,50 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("server: policy engine reload: %w", err)
 	}
 
-	registry := providers.NewRegistry()
-	registry.Register(mock.New())
+	// ── Notification dispatcher ───────────────────────────────────────────────
+	var notifiers []notifications.Notifier
+	if cfg := s.cfg.Notifications.Slack; cfg != nil && cfg.WebhookURL != "" {
+		notifiers = append(notifiers, notifications.NewSlackNotifier(*cfg))
+	}
+	if cfg := s.cfg.Notifications.SMTP; cfg != nil && cfg.Host != "" {
+		notifiers = append(notifiers, notifications.NewSMTPNotifier(*cfg))
+	}
+	dispatcher := notifications.NewDispatcher(notifiers...)
 
-	workflowEngine := workflow.NewEngine(s.store, auditLogger, policyEngine, registry)
+	// ── Provider registry ─────────────────────────────────────────────────────
+	registry := providers.NewRegistry()
+	registry.Register(mock.New()) // always available for testing and demos
+
+	if pcfg := s.cfg.Providers.Kubernetes; pcfg != nil {
+		if kp, err := k8sprovider.New(*pcfg); err != nil {
+			log.Warn().Err(err).Msg("kubernetes provider: init failed, skipping")
+		} else {
+			registry.Register(kp)
+		}
+	}
+	if pcfg := s.cfg.Providers.AWS; pcfg != nil {
+		if ap, err := awsprovider.New(ctx, *pcfg); err != nil {
+			log.Warn().Err(err).Msg("aws provider: init failed, skipping")
+		} else {
+			registry.Register(ap)
+		}
+	}
+	if pcfg := s.cfg.Providers.GCP; pcfg != nil {
+		if gp, err := gcpprovider.New(ctx, *pcfg); err != nil {
+			log.Warn().Err(err).Msg("gcp provider: init failed, skipping")
+		} else {
+			registry.Register(gp)
+		}
+	}
+	if pcfg := s.cfg.Providers.Azure; pcfg != nil {
+		if azp, err := azureprovider.New(ctx, *pcfg); err != nil {
+			log.Warn().Err(err).Msg("azure provider: init failed, skipping")
+		} else {
+			registry.Register(azp)
+		}
+	}
+
+	workflowEngine := workflow.NewEngine(s.store, auditLogger, policyEngine, registry, dispatcher)
 	handler := api.NewHandler(workflowEngine, s.store, auditLogger, policyEngine)
 
 	// ── gRPC server ───────────────────────────────────────────────────────────

@@ -584,6 +584,135 @@ func TestAPI_QueryAudit(t *testing.T) {
 	}
 }
 
+// ── Revoke ────────────────────────────────────────────────────────────────────
+
+// TestAPI_FullWorkflow_RevokeActive verifies the full revoke flow:
+// create → approve → active → revoke → REVOKED state.
+func TestAPI_FullWorkflow_RevokeActive(t *testing.T) {
+	ctx := context.Background()
+
+	// Alice creates a request.
+	createResp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+		Provider:        "mock",
+		Role:            "engineer",
+		ResourceScope:   "dev-scope",
+		DurationSeconds: 300,
+		Reason:          "TestAPI_FullWorkflow_RevokeActive",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+	reqID := createResp.Request.Id
+
+	// Bob approves.
+	if _, err := bobClient.Service().ApproveRequest(ctx, &jitsudov1alpha1.ApproveRequestInput{
+		RequestId: reqID,
+		Comment:   "approved for revoke test",
+	}); err != nil {
+		t.Fatalf("ApproveRequest: %v", err)
+	}
+
+	// Verify ACTIVE state.
+	getResp, err := aliceClient.Service().GetRequest(ctx, &jitsudov1alpha1.GetRequestInput{Id: reqID})
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if getResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+		t.Fatalf("after approve: State = %v, want ACTIVE", getResp.Request.State)
+	}
+
+	// Alice revokes her own request.
+	revokeResp, err := aliceClient.Service().RevokeRequest(ctx, &jitsudov1alpha1.RevokeRequestInput{
+		RequestId: reqID,
+		Reason:    "no longer needed",
+	})
+	if err != nil {
+		t.Fatalf("RevokeRequest: %v", err)
+	}
+	if revokeResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_REVOKED {
+		t.Errorf("after revoke: State = %v, want REVOKED", revokeResp.Request.State)
+	}
+
+	// Credentials must no longer be available.
+	_, credErr := aliceClient.Service().GetCredentials(ctx, &jitsudov1alpha1.GetCredentialsInput{
+		RequestId: reqID,
+	})
+	if credErr == nil {
+		t.Error("GetCredentials on REVOKED request should fail, got nil error")
+	}
+
+	// Revoking again is idempotent (returns current state without error).
+	revokeAgain, err := aliceClient.Service().RevokeRequest(ctx, &jitsudov1alpha1.RevokeRequestInput{
+		RequestId: reqID,
+		Reason:    "double revoke",
+	})
+	if err != nil {
+		t.Fatalf("second RevokeRequest (idempotency): %v", err)
+	}
+	if revokeAgain.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_REVOKED {
+		t.Errorf("after second revoke: State = %v, want REVOKED", revokeAgain.Request.State)
+	}
+}
+
+// TestAPI_RevokeRequest_AccessDenied verifies that a different user cannot revoke
+// a request they did not create (and are not an admin).
+func TestAPI_RevokeRequest_AccessDenied(t *testing.T) {
+	ctx := context.Background()
+
+	// Alice creates and bob approves a request.
+	reqID := newTestRequest(t)
+	if _, err := bobClient.Service().ApproveRequest(ctx, &jitsudov1alpha1.ApproveRequestInput{
+		RequestId: reqID,
+	}); err != nil {
+		t.Fatalf("ApproveRequest: %v", err)
+	}
+
+	// Charlie (unrelated user) attempts to revoke — must be denied.
+	_, err := charlieClient.Service().RevokeRequest(ctx, &jitsudov1alpha1.RevokeRequestInput{
+		RequestId: reqID,
+		Reason:    "charlie trying to revoke",
+	})
+	if grpcCode(err) != codes.FailedPrecondition {
+		t.Errorf("non-requester revoke: got %v, want FailedPrecondition", grpcCode(err))
+	}
+}
+
+// TestAPI_BreakGlass_ImmediateActive verifies that a break-glass request
+// bypasses the approval workflow and is returned in ACTIVE state immediately.
+func TestAPI_BreakGlass_ImmediateActive(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+		Provider:        "mock",
+		Role:            "admin",
+		ResourceScope:   "prod-scope",
+		DurationSeconds: 600,
+		Reason:          "TestAPI_BreakGlass: production incident",
+		BreakGlass:      true,
+	})
+	if err != nil {
+		t.Fatalf("break-glass CreateRequest: %v", err)
+	}
+	req := resp.Request
+	if req.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+		t.Fatalf("break-glass request state = %v, want ACTIVE", req.State)
+	}
+	if !req.BreakGlass {
+		t.Error("break-glass request: BreakGlass flag should be true")
+	}
+
+	// Credentials must be immediately available.
+	creds, err := aliceClient.Service().GetCredentials(ctx, &jitsudov1alpha1.GetCredentialsInput{
+		RequestId: req.Id,
+	})
+	if err != nil {
+		t.Fatalf("GetCredentials on break-glass: %v", err)
+	}
+	if len(creds.GetGrant().GetCredentials()) == 0 {
+		t.Error("break-glass: expected non-empty credentials")
+	}
+}
+
 // ── Health & Version ──────────────────────────────────────────────────────────
 
 func TestAPI_HealthEndpoints(t *testing.T) {

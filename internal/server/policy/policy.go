@@ -76,6 +76,23 @@ func (e *Engine) EvalApproval(ctx context.Context, approver *auth.Identity, req 
 	return e.eval(ctx, q, buildInput(approver, req.Provider, req.Role, req.ResourceScope, req.DurationSeconds))
 }
 
+// EvalRaw evaluates the given policy type against a pre-built OPA input map.
+// This is used by the EvalPolicy RPC for dry-run evaluation.
+func (e *Engine) EvalRaw(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error) {
+	e.mu.RLock()
+	var q *rego.PreparedEvalQuery
+	if ptype == store.PolicyTypeApproval {
+		q = e.approvalQuery
+	} else {
+		q = e.eligibilityQuery
+	}
+	e.mu.RUnlock()
+	if q == nil {
+		return false, "policy engine not loaded", nil
+	}
+	return e.eval(ctx, q, input)
+}
+
 // buildQuery compiles all enabled policies of ptype into a PreparedEvalQuery.
 func (e *Engine) buildQuery(ctx context.Context, ptype store.PolicyType, query string) (*rego.PreparedEvalQuery, error) {
 	policies, err := e.store.ListEnabledPoliciesByType(ctx, ptype)

@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
+	"github.com/jitsudo-dev/jitsudo/internal/providers/kubernetes"
 	"github.com/jitsudo-dev/jitsudo/internal/providers/mock"
 )
 
@@ -23,10 +26,15 @@ var providerFactories = map[string]providerFactory{
 	"mock": func(t *testing.T) providers.Provider {
 		return mock.New()
 	},
-	// "aws":        func(t *testing.T) providers.Provider { ... },  // add when implemented
-	// "azure":      func(t *testing.T) providers.Provider { ... },
-	// "gcp":        func(t *testing.T) providers.Provider { ... },
-	// "kubernetes": func(t *testing.T) providers.Provider { ... },
+	"kubernetes": func(t *testing.T) providers.Provider {
+		return kubernetes.NewWithClientset(
+			kubernetes.Config{ManagedLabel: "jitsudo.dev/managed"},
+			k8sfake.NewSimpleClientset(),
+		)
+	},
+	// "aws":   func(t *testing.T) providers.Provider { ... },  // add when implemented (requires //go:build integration)
+	// "azure": func(t *testing.T) providers.Provider { ... },
+	// "gcp":   func(t *testing.T) providers.Provider { ... },
 }
 
 func TestProviderContract(t *testing.T) {

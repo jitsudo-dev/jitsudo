@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -107,6 +108,18 @@ func (h *Handler) DenyRequest(ctx context.Context, in *jitsudov1alpha1.DenyReque
 	return &jitsudov1alpha1.DenyRequestResponse{Request: requestToProto(req)}, nil
 }
 
+func (h *Handler) RevokeRequest(ctx context.Context, in *jitsudov1alpha1.RevokeRequestInput) (*jitsudov1alpha1.RevokeRequestResponse, error) {
+	identity := auth.FromContext(ctx)
+	if identity == nil {
+		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	req, err := h.workflow.RevokeRequest(ctx, identity, in.GetRequestId(), in.GetReason())
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+	return &jitsudov1alpha1.RevokeRequestResponse{Request: requestToProto(req)}, nil
+}
+
 func (h *Handler) GetCredentials(ctx context.Context, in *jitsudov1alpha1.GetCredentialsInput) (*jitsudov1alpha1.GetCredentialsResponse, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
@@ -198,6 +211,25 @@ func (h *Handler) DeletePolicy(ctx context.Context, in *jitsudov1alpha1.DeletePo
 		return nil, status.Errorf(codes.Internal, "policy reload: %v", err)
 	}
 	return &jitsudov1alpha1.DeletePolicyResponse{}, nil
+}
+
+func (h *Handler) EvalPolicy(ctx context.Context, in *jitsudov1alpha1.EvalPolicyInput) (*jitsudov1alpha1.EvalPolicyResponse, error) {
+	if auth.FromContext(ctx) == nil {
+		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(in.GetInputJson()), &input); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid input_json: %v", err)
+	}
+	ptype := protoPolicyTypeToStore(in.GetType())
+	allowed, reason, err := h.policy.EvalRaw(ctx, ptype, input)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "policy eval: %v", err)
+	}
+	return &jitsudov1alpha1.EvalPolicyResponse{
+		Allowed: allowed,
+		Reason:  reason,
+	}, nil
 }
 
 // ── Audit RPC ─────────────────────────────────────────────────────────────────
