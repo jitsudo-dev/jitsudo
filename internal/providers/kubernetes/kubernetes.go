@@ -120,9 +120,9 @@ func (p *Provider) Grant(ctx context.Context, req providers.ElevationRequest) (*
 	isNamespaced := namespace != ""
 
 	annotations := map[string]string{
-		"jitsudo.dev/expires-at":  expiresAt.Format(time.RFC3339),
-		"jitsudo.dev/request-id":  req.RequestID,
-		"jitsudo.dev/user":        req.UserIdentity,
+		"jitsudo.dev/expires-at": expiresAt.Format(time.RFC3339),
+		"jitsudo.dev/request-id": req.RequestID,
+		"jitsudo.dev/user":       req.UserIdentity,
 	}
 	labels := map[string]string{
 		p.managedLabel(): "true",
@@ -260,7 +260,7 @@ func (p *Provider) IsActive(ctx context.Context, grant providers.ElevationGrant)
 
 // k8sRevokeToken is the JSON payload stored in ElevationGrant.RevokeToken.
 type k8sRevokeToken struct {
-	Kind      string `json:"kind"`      // "ClusterRoleBinding" or "RoleBinding"
+	Kind      string `json:"kind"` // "ClusterRoleBinding" or "RoleBinding"
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"` // empty for ClusterRoleBinding
 }

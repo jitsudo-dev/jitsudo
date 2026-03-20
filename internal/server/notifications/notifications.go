@@ -27,7 +27,7 @@ const (
 type Event struct {
 	Type      EventType
 	RequestID string
-	Actor     string    // requester, approver, or "system"
+	Actor     string // requester, approver, or "system"
 	Provider  string
 	Role      string
 	Scope     string

@@ -158,8 +158,7 @@ func TestSlackNotifier_FormatMessage_BreakGlass(t *testing.T) {
 	}
 	// No mention when MentionOnBreakGlass is empty.
 	if strings.Contains(msg, "<!") || strings.Contains(msg, "@") {
-		// There should be no Slack mention syntax when MentionOnBreakGlass is empty.
-		// The only @ that could appear is in email - safe to check for mention patterns.
+		t.Errorf("expected no mention syntax in message, got: %q", msg)
 	}
 }
 

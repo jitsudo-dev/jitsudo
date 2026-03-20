@@ -57,10 +57,10 @@ type NotificationsConfig struct {
 // ProvidersConfig holds optional cloud provider configurations.
 // Providers are only registered when their configuration is non-nil.
 type ProvidersConfig struct {
-	AWS        *awsprovider.Config        `yaml:"aws"`
-	GCP        *gcpprovider.Config        `yaml:"gcp"`
-	Azure      *azureprovider.Config      `yaml:"azure"`
-	Kubernetes *k8sprovider.Config        `yaml:"kubernetes"`
+	AWS        *awsprovider.Config   `yaml:"aws"`
+	GCP        *gcpprovider.Config   `yaml:"gcp"`
+	Azure      *azureprovider.Config `yaml:"azure"`
+	Kubernetes *k8sprovider.Config   `yaml:"kubernetes"`
 }
 
 // Server is the jitsudod control plane.
