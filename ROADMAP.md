@@ -43,31 +43,41 @@ Goal: A minimal end-to-end flow working locally against the mock provider.
 - [x] Slack notification integration
 - [x] Email (SMTP) notification integration
 
-## Milestone 3: Production Readiness (Current)
+## Milestone 3: Production Readiness ✓
 
 - [x] Helm chart (`helm/jitsudo/` in main repo, postgresql subchart included)
 - [x] `jitsudo server init` bootstrap command
 - [x] mTLS for gRPC (server-only TLS and mutual TLS via TLSConfig)
 - [x] Integration test suite (LocalStack for AWS, envtest for Kubernetes)
 - [x] `jitsudo server` admin subcommands (status, version, reload-policies)
-- [ ] Comprehensive documentation site (jitsudo.dev)
+- [x] Comprehensive documentation site (jitsudo.dev)
 
-## Milestone 4: Ecosystem
+## Milestone 4: Architecture (Current)
+
+Goal: Implement the three-tier approval model and the architectural decisions captured in the design review. This milestone delivers the complete, production-grade access control model.
+
+- [ ] Three-tier approval model — OPA tier routing (`approver_tier: auto | ai_review | human`)
+- [ ] Tier 1: policy-driven auto-approve in `workflow.go` (no human or AI action required)
+- [ ] Tier 2: AI-assisted review — MCP approver interface on `jitsudod`
+- [ ] Trust tier system for principals (Tier 0–4, principal enrollment, `input.trust_tier` policy input)
+- [ ] AI approver audit trail (model reasoning captured per Tier 2 decision)
+- [ ] Generic webhook notification
+- [ ] SIEM integration (basic JSON streaming + syslog forwarding)
+- [ ] Multi-instance HA deployment (HPA, PodDisruptionBudget, PostgreSQL replication)
+
+## Milestone 5: Ecosystem
 
 - [ ] Terraform modules (AWS/Azure/GCP)
 - [ ] E2E test suite (live cloud accounts)
 - [ ] Homebrew tap
 - [ ] Docker Hub images
-- [ ] Generic webhook notification
-- [ ] Multi-region / HA deployment guide
 
-## Enterprise Features (Future)
+## Milestone 6: Enterprise Features
 
-- Multi-tenancy
-- SIEM integration connectors (Splunk, Datadog, SumoLogic)
-- Slack interactive approval buttons
-- Policy GitOps sync
-- Hierarchical scope inheritance
-- Multi-instance HA with HPA + PodDisruptionBudget
-- Session recording
-- ITSM integration (post-incident review)
+- [ ] Multi-tenancy
+- [ ] SIEM integration connectors (Splunk, Datadog, SumoLogic)
+- [ ] Slack interactive approval buttons
+- [ ] Policy GitOps sync
+- [ ] Hierarchical scope inheritance
+- [ ] Session recording
+- [ ] ITSM integration (post-incident review)
