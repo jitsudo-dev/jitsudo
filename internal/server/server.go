@@ -262,6 +262,26 @@ func (s *Server) Start(ctx context.Context) error {
 	// ── Expiry sweeper ────────────────────────────────────────────────────────
 	go workflowEngine.RunExpirySweeper(ctx, 30*time.Second)
 
+	// ── Periodic policy sync ──────────────────────────────────────────────────
+	// Each instance independently re-reads policies from the database every 30s,
+	// so ApplyPolicy / DeletePolicy changes propagate to all replicas without
+	// requiring a fan-out ReloadPolicies RPC. No advisory lock needed — each
+	// instance reloading its own cache is idempotent and has no side effects.
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := policyEngine.Reload(ctx); err != nil {
+					log.Warn().Err(err).Msg("policy sync: reload failed")
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	// ── Wait for shutdown ─────────────────────────────────────────────────────
 	select {
 	case <-ctx.Done():

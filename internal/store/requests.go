@@ -277,6 +277,39 @@ func (s *Store) TransitionRequest(ctx context.Context, id string, fromState, toS
 	return s.GetRequest(ctx, id)
 }
 
+// sweepLockKey is the PostgreSQL advisory lock key reserved for the expiry sweeper.
+// The value is fixed and must be identical across all jitsudod instances.
+const sweepLockKey = int64(7278657000) // "jitsudo\0" packed, avoids collision with ad-hoc keys
+
+// TryAcquireSweepLock attempts a non-blocking session-level PostgreSQL advisory lock.
+// Only one jitsudod instance holds this lock at a time, ensuring the expiry sweeper
+// (which calls provider.Revoke before the DB state transition) runs on exactly one
+// instance — preventing duplicate provider calls in multi-instance deployments.
+//
+// Returns (true, release) when the lock is acquired; the caller MUST call release()
+// when the sweep finishes. Returns (false, no-op) when another instance already holds
+// the lock. Returns an error only on unexpected database failures.
+func (s *Store) TryAcquireSweepLock(ctx context.Context) (bool, func(), error) {
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return false, func() {}, fmt.Errorf("store: sweep lock acquire conn: %w", err)
+	}
+	var acquired bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, sweepLockKey).Scan(&acquired); err != nil {
+		conn.Release()
+		return false, func() {}, fmt.Errorf("store: pg_try_advisory_lock: %w", err)
+	}
+	if !acquired {
+		conn.Release()
+		return false, func() {}, nil
+	}
+	release := func() {
+		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, sweepLockKey)
+		conn.Release()
+	}
+	return true, release, nil
+}
+
 // nullableJSON returns nil if the input is empty, otherwise the raw bytes.
 func nullableJSON(b []byte) interface{} {
 	if len(b) == 0 {

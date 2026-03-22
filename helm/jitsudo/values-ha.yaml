@@ -1,0 +1,66 @@
+# HA overlay for jitsudo
+# Apply on top of the default values.yaml for production high-availability deployments:
+#
+#   helm upgrade --install jitsudo ./helm/jitsudo \
+#     --namespace jitsudo \
+#     -f helm/jitsudo/values-ha.yaml \
+#     --set config.auth.oidcIssuer=https://your-idp.example.com
+#
+# For production, also disable the bundled PostgreSQL and supply an external
+# managed database (RDS Multi-AZ, Cloud SQL HA, Azure Database for PostgreSQL):
+#
+#   postgresql:
+#     enabled: false
+#   config:
+#     database:
+#       existingSecret: "jitsudo-db"   # Secret with DATABASE_URL key
+
+# Run two replicas by default; HPA below will scale up from this floor.
+replicaCount: 2
+
+# Prevent simultaneous disruption of all pods during node drains or rolling updates.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Scale on both CPU and memory.
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Spread pods across nodes so a single node failure cannot take down all replicas.
+# Uses preferredDuringScheduling so single-node dev/CI clusters are still supported.
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - jitsudo
+          topologyKey: kubernetes.io/hostname
+
+# Increase resource ceiling for production workloads.
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# Bundled PostgreSQL with one streaming read replica.
+# NOTE: the bundled chart does NOT provide automatic failover. For production,
+# disable this and use a managed service with automatic failover instead.
+# See: https://jitsudo.dev/guides/ha-dr/
+postgresql:
+  readReplicas:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      size: 8Gi

@@ -63,7 +63,7 @@ Goal: Implement the three-tier approval model and the architectural decisions ca
 - [x] AI approver audit trail (model reasoning captured per Tier 2 decision)
 - [x] Generic webhook notification
 - [x] SIEM integration (basic JSON streaming + syslog forwarding)
-- [ ] Multi-instance HA deployment (HPA, PodDisruptionBudget, PostgreSQL replication)
+- [x] Multi-instance HA deployment (HPA, PodDisruptionBudget, PostgreSQL replication)
 
 ## Milestone 5: Ecosystem
 

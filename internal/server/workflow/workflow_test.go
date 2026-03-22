@@ -25,10 +25,22 @@ type stubStore struct {
 	// Inject errors for specific operations.
 	transitionErr error
 	setTierErr    error
+
+	// Advisory lock control for sweepExpired tests.
+	sweepLockAcquired bool  // default true when zero-value; set to false to simulate another instance holding the lock
+	sweepLockErr      error // non-nil simulates a lock acquisition failure
+
+	// Rows returned by ListActiveExpired. Default nil (none).
+	activeExpiredRows []*store.RequestRow
+	// listExpiredCalled is set true whenever ListActiveExpired is invoked.
+	listExpiredCalled bool
 }
 
 func newStubStore(rows ...*store.RequestRow) *stubStore {
-	s := &stubStore{rows: make(map[string]*store.RequestRow)}
+	s := &stubStore{
+		rows:              make(map[string]*store.RequestRow),
+		sweepLockAcquired: true, // default: this instance wins the lock
+	}
 	for _, r := range rows {
 		cp := *r
 		s.rows[r.ID] = &cp
@@ -108,7 +120,17 @@ func (s *stubStore) SetApproverTier(_ context.Context, id, tier string) error {
 }
 
 func (s *stubStore) ListActiveExpired(_ context.Context) ([]*store.RequestRow, error) {
-	return nil, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listExpiredCalled = true
+	return s.activeExpiredRows, nil
+}
+
+func (s *stubStore) TryAcquireSweepLock(_ context.Context) (bool, func(), error) {
+	if s.sweepLockErr != nil {
+		return false, func() {}, s.sweepLockErr
+	}
+	return s.sweepLockAcquired, func() {}, nil
 }
 
 // stubAudit records all Append calls for assertion.
@@ -372,5 +394,114 @@ func TestAIEscalateRequest_SetTierError(t *testing.T) {
 	_, err := e.AIEscalateRequest(context.Background(), "req_001", "agent", "reason")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// ── sweepExpired (advisory lock) ──────────────────────────────────────────────
+
+// activeExpiredRow returns an ACTIVE request that is past its expiry deadline.
+func activeExpiredRow(id string) *store.RequestRow {
+	past := time.Now().UTC().Add(-5 * time.Minute)
+	now := time.Now().UTC()
+	return &store.RequestRow{
+		ID:                id,
+		State:             store.StateActive,
+		RequesterIdentity: "bob@example.com",
+		Provider:          "mock",
+		Role:              "admin",
+		ResourceScope:     "test-scope",
+		DurationSeconds:   3600,
+		RevokeToken:       "tok-" + id,
+		ExpiresAt:         &past,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+}
+
+// TestSweepExpired_LockAcquired verifies that when this instance wins the
+// advisory lock, expired grants are revoked and transitioned to EXPIRED.
+func TestSweepExpired_LockAcquired(t *testing.T) {
+	const reqID = "req_sweep_001"
+	row := activeExpiredRow(reqID)
+
+	s := newStubStore(row)
+	s.activeExpiredRows = []*store.RequestRow{row}
+
+	a := &stubAudit{}
+	e := newTestEngine(s, a)
+
+	e.sweepExpired(context.Background())
+
+	// DB row must be EXPIRED.
+	updated, err := s.GetRequest(context.Background(), reqID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if updated.State != store.StateExpired {
+		t.Errorf("State = %q, want EXPIRED", updated.State)
+	}
+
+	// Audit entry for grant expiry must exist.
+	if _, ok := a.findByAction(audit.ActionGrantExpired); !ok {
+		t.Errorf("audit missing %q; got %v", audit.ActionGrantExpired, a.actions())
+	}
+}
+
+// TestSweepExpired_LockNotAcquired verifies that when another instance already
+// holds the advisory lock, this instance skips the sweep entirely — no DB
+// queries, no provider calls.
+func TestSweepExpired_LockNotAcquired(t *testing.T) {
+	const reqID = "req_sweep_002"
+	row := activeExpiredRow(reqID)
+
+	s := newStubStore(row)
+	s.activeExpiredRows = []*store.RequestRow{row}
+	s.sweepLockAcquired = false // simulate another instance holding the lock
+
+	a := &stubAudit{}
+	e := newTestEngine(s, a)
+
+	e.sweepExpired(context.Background())
+
+	// ListActiveExpired must NOT have been called (sweep was skipped).
+	s.mu.Lock()
+	called := s.listExpiredCalled
+	s.mu.Unlock()
+	if called {
+		t.Error("ListActiveExpired was called even though the advisory lock was not acquired")
+	}
+
+	// DB row must still be ACTIVE.
+	unchanged, err := s.GetRequest(context.Background(), reqID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if unchanged.State != store.StateActive {
+		t.Errorf("State = %q, want ACTIVE (sweep should have been skipped)", unchanged.State)
+	}
+
+	// No audit entries.
+	if len(a.actions()) > 0 {
+		t.Errorf("expected no audit entries, got %v", a.actions())
+	}
+}
+
+// TestSweepExpired_LockError verifies that a lock acquisition error causes the
+// sweep to be skipped without panicking.
+func TestSweepExpired_LockError(t *testing.T) {
+	s := newStubStore()
+	s.sweepLockErr = errors.New("db unavailable")
+
+	e := newTestEngine(s, &stubAudit{})
+
+	// Must not panic.
+	e.sweepExpired(context.Background())
+
+	// ListActiveExpired must NOT have been called.
+	s.mu.Lock()
+	called := s.listExpiredCalled
+	s.mu.Unlock()
+	if called {
+		t.Error("ListActiveExpired was called after a lock acquisition error")
 	}
 }

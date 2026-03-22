@@ -38,6 +38,7 @@ type engineStore interface {
 	TransitionRequest(ctx context.Context, id string, fromState, toState store.RequestState, u store.RequestUpdate) (*store.RequestRow, error)
 	SetApproverTier(ctx context.Context, id string, tier string) error
 	ListActiveExpired(ctx context.Context) ([]*store.RequestRow, error)
+	TryAcquireSweepLock(ctx context.Context) (bool, func(), error)
 }
 
 // auditAppender is the subset of *audit.Logger used by the Engine.
@@ -757,6 +758,20 @@ func (e *Engine) RunExpirySweeper(ctx context.Context, interval time.Duration) {
 }
 
 func (e *Engine) sweepExpired(ctx context.Context) {
+	// Acquire a non-blocking advisory lock so only one jitsudod instance runs the
+	// sweep at a time. provider.Revoke is called before the DB state transition, so
+	// without this lock multiple instances would issue duplicate Revoke calls for the
+	// same grant in HA deployments.
+	acquired, release, err := e.store.TryAcquireSweepLock(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("expiry sweeper: advisory lock error")
+		return
+	}
+	if !acquired {
+		return // another instance is already sweeping
+	}
+	defer release()
+
 	expired, err := e.store.ListActiveExpired(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("expiry sweeper: list failed")

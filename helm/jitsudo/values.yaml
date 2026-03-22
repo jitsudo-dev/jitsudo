@@ -158,8 +158,9 @@ resources:
 autoscaling:
   enabled: false
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 10
   targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80  # uncomment to add a memory-based scaling metric
 
 # ── Pod Disruption Budget ─────────────────────────────────────────────────────
 podDisruptionBudget:
