@@ -162,6 +162,29 @@ notifications:
       - "sre-team@example.com"
       - "security@example.com"
 
+  # Generic webhook — POST structured JSON to any HTTPS endpoint on every event.
+  # Multiple entries are supported; each is an independent notifier.
+  # Payload fields: type, request_id, actor, provider, role, scope, reason,
+  #                 expires_at (RFC3339, omitted when not set), timestamp (RFC3339).
+  # Override single URL: JITSUDOD_WEBHOOK_URL
+  webhooks:
+    - url: "https://hooks.example.com/jitsudo"
+
+      # secret signs the payload with HMAC-SHA256; receivers check
+      # X-Jitsudo-Signature-256: sha256=<hex> to verify authenticity.
+      secret: ""
+
+      # events filters which event types are forwarded.
+      # Leave empty (or omit) to forward all events.
+      events: []
+
+      # headers adds arbitrary HTTP headers to every request.
+      headers:
+        Authorization: "Bearer <token>"
+
+    - url: "https://other.example.com/hook"
+      events: ["break_glass", "approved"]
+
 # ── MCP Approver Interface ────────────────────────────────────────────────────
 # The MCP endpoint (POST /mcp) lets AI agents evaluate and decide on pending
 # Tier 2 elevation requests. It is disabled when token is empty.

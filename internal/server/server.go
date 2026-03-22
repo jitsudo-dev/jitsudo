@@ -83,8 +83,9 @@ type TLSConfig struct {
 
 // NotificationsConfig holds optional notifier configurations.
 type NotificationsConfig struct {
-	Slack *notifications.SlackConfig `yaml:"slack"`
-	SMTP  *notifications.SMTPConfig  `yaml:"smtp"`
+	Slack    *notifications.SlackConfig     `yaml:"slack"`
+	SMTP     *notifications.SMTPConfig      `yaml:"smtp"`
+	Webhooks []*notifications.WebhookConfig `yaml:"webhooks"`
 }
 
 // ProvidersConfig holds optional cloud provider configurations.
@@ -135,6 +136,11 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	if cfg := s.cfg.Notifications.SMTP; cfg != nil && cfg.Host != "" {
 		notifiers = append(notifiers, notifications.NewSMTPNotifier(*cfg))
+	}
+	for _, cfg := range s.cfg.Notifications.Webhooks {
+		if cfg != nil && cfg.URL != "" {
+			notifiers = append(notifiers, notifications.NewWebhookNotifier(*cfg))
+		}
 	}
 	dispatcher := notifications.NewDispatcher(notifiers...)
 

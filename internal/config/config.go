@@ -81,8 +81,9 @@ type ProvidersCfg struct {
 
 // NotificationsCfg holds optional notification channel configurations.
 type NotificationsCfg struct {
-	Slack *notifications.SlackConfig `yaml:"slack"`
-	SMTP  *notifications.SMTPConfig  `yaml:"smtp"`
+	Slack    *notifications.SlackConfig     `yaml:"slack"`
+	SMTP     *notifications.SMTPConfig      `yaml:"smtp"`
+	Webhooks []*notifications.WebhookConfig `yaml:"webhooks"`
 }
 
 // LogCfg controls log level and output format.
@@ -171,6 +172,11 @@ func applyEnv(cfg *FileConfig) {
 			cfg.Notifications.SMTP = &notifications.SMTPConfig{}
 		}
 		cfg.Notifications.SMTP.Password = v
+	}
+	// JITSUDOD_WEBHOOK_URL injects a single no-auth webhook when no YAML webhooks
+	// are configured. Useful for simple Docker / Kubernetes Secret deployments.
+	if v := os.Getenv("JITSUDOD_WEBHOOK_URL"); v != "" && len(cfg.Notifications.Webhooks) == 0 {
+		cfg.Notifications.Webhooks = []*notifications.WebhookConfig{{URL: v}}
 	}
 }
 

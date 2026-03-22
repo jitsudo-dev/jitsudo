@@ -74,8 +74,9 @@ func main() {
 			Kubernetes: cfg.Providers.Kubernetes,
 		},
 		Notifications: server.NotificationsConfig{
-			Slack: cfg.Notifications.Slack,
-			SMTP:  cfg.Notifications.SMTP,
+			Slack:    cfg.Notifications.Slack,
+			SMTP:     cfg.Notifications.SMTP,
+			Webhooks: cfg.Notifications.Webhooks,
 		},
 		MCPToken:         cfg.MCP.Token,
 		MCPAgentIdentity: cfg.MCP.AgentIdentity,

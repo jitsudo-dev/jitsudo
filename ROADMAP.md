@@ -61,7 +61,7 @@ Goal: Implement the three-tier approval model and the architectural decisions ca
 - [x] Tier 2: AI-assisted review — MCP approver interface on `jitsudod`
 - [x] Trust tier system for principals (Tier 0–4, principal enrollment, `input.trust_tier` policy input)
 - [x] AI approver audit trail (model reasoning captured per Tier 2 decision)
-- [ ] Generic webhook notification
+- [x] Generic webhook notification
 - [ ] SIEM integration (basic JSON streaming + syslog forwarding)
 - [ ] Multi-instance HA deployment (HPA, PodDisruptionBudget, PostgreSQL replication)
 
