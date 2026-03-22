@@ -80,6 +80,12 @@ data:
           {{- end }}
       {{- end }}
 
+    {{- if .Values.config.mcp.enabled }}
+    mcp:
+      token: ""  # supplied via JITSUDOD_MCP_TOKEN env var
+      agent_identity: {{ .Values.config.mcp.agentIdentity | quote }}
+    {{- end }}
+
     log:
       level: {{ .Values.config.log.level | quote }}
       format: {{ .Values.config.log.format | quote }}

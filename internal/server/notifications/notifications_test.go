@@ -19,9 +19,11 @@ type mockNotifier struct {
 	mu      sync.Mutex
 	count   int
 	lastErr error
+	wg      sync.WaitGroup // callers Add(n) before dispatching; Notify calls Done()
 }
 
 func (m *mockNotifier) Notify(_ context.Context, _ Event) error {
+	defer m.wg.Done()
 	m.mu.Lock()
 	m.count++
 	m.mu.Unlock()
@@ -45,12 +47,14 @@ func TestDispatcher_NilSafe(t *testing.T) {
 func TestDispatcher_FanOut(t *testing.T) {
 	n1 := &mockNotifier{}
 	n2 := &mockNotifier{}
+	n1.wg.Add(1)
+	n2.wg.Add(1)
 	d := NewDispatcher(n1, n2)
 
 	d.Notify(context.Background(), Event{Type: EventApproved, RequestID: "req-001"})
 
-	// Wait for goroutines.
-	time.Sleep(100 * time.Millisecond)
+	n1.wg.Wait()
+	n2.wg.Wait()
 
 	if got := n1.getCount(); got != 1 {
 		t.Errorf("n1 called %d times, want 1", got)
@@ -63,12 +67,15 @@ func TestDispatcher_FanOut(t *testing.T) {
 func TestDispatcher_ErrorNotLogged_OtherStillCalled(t *testing.T) {
 	errNotifier := &mockNotifier{lastErr: errTest("notify failed")}
 	okNotifier := &mockNotifier{}
+	errNotifier.wg.Add(1)
+	okNotifier.wg.Add(1)
 	d := NewDispatcher(errNotifier, okNotifier)
 
 	// Should not panic even when one notifier returns error.
 	d.Notify(context.Background(), Event{Type: EventDenied, RequestID: "req-002"})
 
-	time.Sleep(100 * time.Millisecond)
+	errNotifier.wg.Wait()
+	okNotifier.wg.Wait()
 
 	if got := errNotifier.getCount(); got != 1 {
 		t.Errorf("errNotifier called %d times, want 1", got)
@@ -123,7 +130,9 @@ func TestSlackNotifier_ChannelInPayload(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var payload map[string]string
-	_ = json.Unmarshal(capturedBody, &payload)
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("invalid JSON body: %v", err)
+	}
 	if ch, ok := payload["channel"]; !ok || ch != "#alerts" {
 		t.Errorf("expected channel=#alerts in payload, got %v", payload)
 	}

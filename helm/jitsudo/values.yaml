@@ -108,6 +108,19 @@ config:
       from: ""
       to: []
 
+  # ── MCP Approver Interface ──────────────────────────────────────────────────
+  # Set enabled: true and supply a token to activate the /mcp endpoint for
+  # AI agent approvers. The token should come from a Kubernetes Secret.
+  mcp:
+    enabled: false
+    # Name of a Kubernetes Secret containing the MCP Bearer token.
+    # The Secret must have a key: JITSUDOD_MCP_TOKEN
+    existingSecret: ""
+    # Inline token value — use existingSecret instead in production.
+    token: ""
+    # Identity recorded in the audit log for every AI approval decision.
+    agentIdentity: "mcp-agent"
+
   log:
     level: "info"
     format: "json"

@@ -77,6 +77,8 @@ func main() {
 			Slack: cfg.Notifications.Slack,
 			SMTP:  cfg.Notifications.SMTP,
 		},
+		MCPToken:         cfg.MCP.Token,
+		MCPAgentIdentity: cfg.MCP.AgentIdentity,
 	}, st)
 
 	if err := srv.Start(ctx); err != nil {

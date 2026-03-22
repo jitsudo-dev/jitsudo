@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package jitsudo.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
+
+// Principal holds the enrollment record for a known identity.
+message Principal {
+  // Identity is the IdP email / subject that uniquely identifies this principal.
+  string identity = 1;
+
+  // TrustTier is the admin-assigned trust level (0–4).
+  // 0 = unknown/unverified, 4 = highest trust / break-glass eligible.
+  int32 trust_tier = 2;
+
+  // EnrolledBy is the admin identity that last set the trust tier.
+  string enrolled_by = 3;
+
+  // EnrolledAt is when the trust tier was last set.
+  google.protobuf.Timestamp enrolled_at = 4;
+
+  // LastSeenAt is the last time this principal made an authenticated request.
+  google.protobuf.Timestamp last_seen_at = 5;
+
+  // Notes is an optional free-text field for the enrolling admin.
+  string notes = 6;
+}
+
+// SetPrincipalTrustTierInput is the request body for admin tier assignment.
+message SetPrincipalTrustTierInput {
+  string identity = 1;
+  int32  trust_tier = 2;
+  string notes = 3;
+}
+
+// SetPrincipalTrustTierResponse wraps the updated principal record.
+message SetPrincipalTrustTierResponse {
+  Principal principal = 1;
+}
+
+// GetPrincipalInput carries the identity to look up.
+message GetPrincipalInput {
+  string identity = 1;
+}
+
+// GetPrincipalResponse wraps the principal record.
+message GetPrincipalResponse {
+  Principal principal = 1;
+}

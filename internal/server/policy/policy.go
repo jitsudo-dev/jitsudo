@@ -21,9 +21,10 @@ import (
 type Engine struct {
 	store *store.Store
 
-	mu               sync.RWMutex
-	eligibilityQuery *rego.PreparedEvalQuery
-	approvalQuery    *rego.PreparedEvalQuery
+	mu                sync.RWMutex
+	eligibilityQuery  *rego.PreparedEvalQuery
+	approvalQuery     *rego.PreparedEvalQuery
+	approvalTierQuery *rego.PreparedEvalQuery
 }
 
 // NewEngine returns an Engine. Call Reload before first use.
@@ -42,10 +43,15 @@ func (e *Engine) Reload(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("policy: reload approval: %w", err)
 	}
+	tierq, err := e.buildQuery(ctx, store.PolicyTypeApproval, "data.jitsudo.approval.approver_tier")
+	if err != nil {
+		return fmt.Errorf("policy: reload approver_tier: %w", err)
+	}
 
 	e.mu.Lock()
 	e.eligibilityQuery = eliq
 	e.approvalQuery = appq
+	e.approvalTierQuery = tierq
 	e.mu.Unlock()
 
 	log.Info().Msg("policy engine reloaded")
@@ -61,7 +67,22 @@ func (e *Engine) EvalEligibility(ctx context.Context, identity *auth.Identity, i
 	if q == nil {
 		return false, "policy engine not loaded", nil
 	}
-	return e.eval(ctx, q, buildInput(identity, input.GetProvider(), input.GetRole(), input.GetResourceScope(), input.GetDurationSeconds()))
+	tier := e.principalTrustTier(ctx, identity.Email)
+	return e.eval(ctx, q, buildInput(identity, input.GetProvider(), input.GetRole(), input.GetResourceScope(), input.GetDurationSeconds(), tier))
+}
+
+// EvalApprovalTier evaluates data.jitsudo.approval.approver_tier to determine
+// which approval path the request should follow.
+// Returns "auto", "ai_review", or "human" (the safe default when the rule is absent).
+func (e *Engine) EvalApprovalTier(ctx context.Context, identity *auth.Identity, input *jitsudov1alpha1.CreateRequestInput) (string, error) {
+	e.mu.RLock()
+	q := e.approvalTierQuery
+	e.mu.RUnlock()
+	if q == nil {
+		return "human", nil
+	}
+	tier := e.principalTrustTier(ctx, identity.Email)
+	return e.evalTier(ctx, q, buildInput(identity, input.GetProvider(), input.GetRole(), input.GetResourceScope(), input.GetDurationSeconds(), tier))
 }
 
 // EvalApproval checks whether the approver is authorised to approve the request.
@@ -73,7 +94,8 @@ func (e *Engine) EvalApproval(ctx context.Context, approver *auth.Identity, req 
 	if q == nil {
 		return false, "policy engine not loaded", nil
 	}
-	return e.eval(ctx, q, buildInput(approver, req.Provider, req.Role, req.ResourceScope, req.DurationSeconds))
+	tier := e.principalTrustTier(ctx, approver.Email)
+	return e.eval(ctx, q, buildInput(approver, req.Provider, req.Role, req.ResourceScope, req.DurationSeconds, tier))
 }
 
 // EvalRaw evaluates the given policy type against a pre-built OPA input map.
@@ -144,8 +166,41 @@ func (e *Engine) eval(ctx context.Context, q *rego.PreparedEvalQuery, input map[
 	return allowed, reason, nil
 }
 
+// principalTrustTier looks up the trust tier for identity from the DB.
+// Returns 0 if the principal is not found or the store is unavailable.
+func (e *Engine) principalTrustTier(ctx context.Context, identity string) int {
+	if e.store == nil {
+		return 0
+	}
+	p, err := e.store.GetPrincipal(ctx, identity)
+	if err != nil {
+		return 0 // unknown/new principals default to tier 0
+	}
+	return p.TrustTier
+}
+
+// evalTier runs a prepared query and extracts the approver_tier string value.
+// Returns "human" if the rule is undefined or not a string.
+func (e *Engine) evalTier(ctx context.Context, q *rego.PreparedEvalQuery, input map[string]any) (string, error) {
+	results, err := q.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return "human", fmt.Errorf("policy: eval tier: %w", err)
+	}
+	if len(results) == 0 || len(results[0].Expressions) == 0 {
+		return "human", nil
+	}
+	tier, _ := results[0].Expressions[0].Value.(string)
+	switch tier {
+	case "auto", "ai_review", "human":
+		return tier, nil
+	default:
+		return "human", nil
+	}
+}
+
 // buildInput constructs the OPA input document.
-func buildInput(identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64) map[string]any {
+// trustTier is the principal's current trust tier (0–4) from the principals table.
+func buildInput(identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64, trustTier int) map[string]any {
 	return map[string]any{
 		"user": map[string]any{
 			"email":   identity.Email,
@@ -157,6 +212,9 @@ func buildInput(identity *auth.Identity, provider, role, resourceScope string, d
 			"role":             role,
 			"resource_scope":   resourceScope,
 			"duration_seconds": durationSeconds,
+		},
+		"context": map[string]any{
+			"trust_tier": trustTier,
 		},
 	}
 }

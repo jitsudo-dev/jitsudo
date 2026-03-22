@@ -56,11 +56,11 @@ Goal: A minimal end-to-end flow working locally against the mock provider.
 
 Goal: Implement the three-tier approval model and the architectural decisions captured in the design review. This milestone delivers the complete, production-grade access control model.
 
-- [ ] Three-tier approval model — OPA tier routing (`approver_tier: auto | ai_review | human`)
-- [ ] Tier 1: policy-driven auto-approve in `workflow.go` (no human or AI action required)
-- [ ] Tier 2: AI-assisted review — MCP approver interface on `jitsudod`
-- [ ] Trust tier system for principals (Tier 0–4, principal enrollment, `input.trust_tier` policy input)
-- [ ] AI approver audit trail (model reasoning captured per Tier 2 decision)
+- [x] Three-tier approval model — OPA tier routing (`approver_tier: auto | ai_review | human`)
+- [x] Tier 1: policy-driven auto-approve in `workflow.go` (no human or AI action required)
+- [x] Tier 2: AI-assisted review — MCP approver interface on `jitsudod`
+- [x] Trust tier system for principals (Tier 0–4, principal enrollment, `input.trust_tier` policy input)
+- [x] AI approver audit trail (model reasoning captured per Tier 2 decision)
 - [ ] Generic webhook notification
 - [ ] SIEM integration (basic JSON streaming + syslog forwarding)
 - [ ] Multi-instance HA deployment (HPA, PodDisruptionBudget, PostgreSQL replication)

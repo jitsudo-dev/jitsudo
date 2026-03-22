@@ -30,6 +30,7 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/server/api"
 	"github.com/jitsudo-dev/jitsudo/internal/server/audit"
 	"github.com/jitsudo-dev/jitsudo/internal/server/auth"
+	"github.com/jitsudo-dev/jitsudo/internal/server/mcp"
 	"github.com/jitsudo-dev/jitsudo/internal/server/notifications"
 	"github.com/jitsudo-dev/jitsudo/internal/server/policy"
 	"github.com/jitsudo-dev/jitsudo/internal/server/workflow"
@@ -55,6 +56,20 @@ type Config struct {
 	// Providers configures the real cloud/infrastructure providers.
 	// Each is optional; nil means the provider is not registered.
 	Providers ProvidersConfig
+
+	// MCPToken is the Bearer token required to use the MCP approver endpoint.
+	// When empty the /mcp endpoint responds with 404 (disabled).
+	MCPToken string
+
+	// MCPAgentIdentity is the name recorded in the audit log for MCP decisions.
+	// Defaults to "mcp-agent" if empty.
+	MCPAgentIdentity string
+
+	// AdminEmails lists email addresses that are granted admin privileges
+	// regardless of group membership. Useful when the OIDC provider does not
+	// emit a groups claim (e.g. Dex static passwords in development).
+	// In production, prefer group-based access via the "jitsudo-admins" group.
+	AdminEmails []string
 }
 
 // TLSConfig holds paths to TLS credentials for the gRPC listener.
@@ -157,7 +172,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	workflowEngine := workflow.NewEngine(s.store, auditLogger, policyEngine, registry, dispatcher)
-	handler := api.NewHandler(workflowEngine, s.store, auditLogger, policyEngine)
+	handler := api.NewHandler(workflowEngine, s.store, auditLogger, policyEngine, s.cfg.AdminEmails)
 
 	// ── gRPC server ───────────────────────────────────────────────────────────
 	grpcLis, err := net.Listen("tcp", s.cfg.GRPCAddr)
@@ -211,6 +226,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	s.registerHealthHandlers(mux)
 	mux.Handle("/api/", gwMux)
+
+	// ── MCP approver interface ────────────────────────────────────────────────
+	mcpServer := mcp.New(workflowEngine, s.store, s.cfg.MCPToken, s.cfg.MCPAgentIdentity)
+	mux.Handle("/mcp", mcpServer)
 
 	s.httpServer = &http.Server{
 		Addr:    s.cfg.HTTPAddr,

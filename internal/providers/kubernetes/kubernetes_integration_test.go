@@ -100,6 +100,12 @@ func TestIntegration_KubernetesProvider_GrantRevokeIsActive(t *testing.T) {
 		t.Fatalf("read kubeconfig: %v", err)
 	}
 	cs := kubeClientFromKubeconfig(t, kubeconfigBytes)
+
+	// Skip if the cluster is not reachable.
+	if _, err := cs.Discovery().ServerVersion(); err != nil {
+		t.Skipf("Kubernetes cluster not reachable — skipping: %v", err)
+	}
+
 	ensureClusterRole(t, cs, "view")
 
 	ctx := context.Background()

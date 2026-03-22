@@ -489,6 +489,151 @@ func TestStore_AppendAndQueryAuditEvents(t *testing.T) {
 	}
 }
 
+// TestStore_Principals verifies principal upsert, trust tier management, and lookup.
+func TestStore_Principals(t *testing.T) {
+	ctx := context.Background()
+	identity := "principal-test-" + ulid.Make().String() + "@example.com"
+
+	// UpsertPrincipalLastSeen creates row with trust_tier=0 on first call.
+	if err := testStore.UpsertPrincipalLastSeen(ctx, identity); err != nil {
+		t.Fatalf("UpsertPrincipalLastSeen: %v", err)
+	}
+
+	p, err := testStore.GetPrincipal(ctx, identity)
+	if err != nil {
+		t.Fatalf("GetPrincipal after upsert: %v", err)
+	}
+	if p.TrustTier != 0 {
+		t.Errorf("TrustTier after upsert = %d, want 0", p.TrustTier)
+	}
+	if p.LastSeenAt.IsZero() {
+		t.Error("LastSeenAt should be set")
+	}
+
+	// SetPrincipalTrustTier upgrades to tier 3.
+	updated, err := testStore.SetPrincipalTrustTier(ctx, identity, 3, "admin@example.com")
+	if err != nil {
+		t.Fatalf("SetPrincipalTrustTier: %v", err)
+	}
+	if updated.TrustTier != 3 {
+		t.Errorf("TrustTier after set = %d, want 3", updated.TrustTier)
+	}
+	if updated.EnrolledBy != "admin@example.com" {
+		t.Errorf("EnrolledBy = %q, want %q", updated.EnrolledBy, "admin@example.com")
+	}
+
+	// GetPrincipal confirms persistence.
+	got, err := testStore.GetPrincipal(ctx, identity)
+	if err != nil {
+		t.Fatalf("GetPrincipal after SetPrincipalTrustTier: %v", err)
+	}
+	if got.TrustTier != 3 {
+		t.Errorf("persisted TrustTier = %d, want 3", got.TrustTier)
+	}
+
+	// Out-of-range tier returns an error; the existing row is not modified.
+	_, err = testStore.SetPrincipalTrustTier(ctx, identity, 5, "admin@example.com")
+	if err == nil {
+		t.Error("expected error for tier=5, got nil")
+	}
+
+	// GetPrincipal for unknown identity returns ErrNotFound.
+	_, err = testStore.GetPrincipal(ctx, "nobody@example.com")
+	if err == nil {
+		t.Fatal("expected ErrNotFound for unknown principal, got nil")
+	}
+}
+
+// TestStore_ListPendingAIReview verifies that only ai_review-tiered PENDING
+// requests are returned, not human-tier or non-PENDING rows.
+func TestStore_ListPendingAIReview(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	aiID := newReqID()
+	humanID := newReqID()
+
+	for _, row := range []*store.RequestRow{
+		{
+			ID: aiID, State: store.StatePending,
+			RequesterIdentity: "alice@example.com", Provider: "mock",
+			Role: "ai-test-role", ResourceScope: "scope", DurationSeconds: 3600,
+			Reason: "ai review test", ApproverTier: "ai_review",
+			CreatedAt: now, UpdatedAt: now,
+		},
+		{
+			ID: humanID, State: store.StatePending,
+			RequesterIdentity: "alice@example.com", Provider: "mock",
+			Role: "human-test-role", ResourceScope: "scope", DurationSeconds: 3600,
+			Reason: "human review test", ApproverTier: "human",
+			CreatedAt: now, UpdatedAt: now,
+		},
+	} {
+		if err := testStore.CreateRequest(ctx, row); err != nil {
+			t.Fatalf("CreateRequest %s: %v", row.ID, err)
+		}
+	}
+
+	results, err := testStore.ListPendingAIReview(ctx)
+	if err != nil {
+		t.Fatalf("ListPendingAIReview: %v", err)
+	}
+
+	ids := make(map[string]bool)
+	for _, r := range results {
+		ids[r.ID] = true
+		if r.ApproverTier != "ai_review" {
+			t.Errorf("ListPendingAIReview returned row with approver_tier=%q", r.ApproverTier)
+		}
+		if r.State != store.StatePending {
+			t.Errorf("ListPendingAIReview returned row with state=%q", r.State)
+		}
+	}
+	if !ids[aiID] {
+		t.Errorf("ai_review request %s not in ListPendingAIReview results", aiID)
+	}
+	if ids[humanID] {
+		t.Errorf("human request %s incorrectly included in ListPendingAIReview results", humanID)
+	}
+}
+
+// TestStore_SetApproverTier verifies that SetApproverTier flips the approver_tier
+// column on a PENDING request and returns ErrNotFound for non-PENDING rows.
+func TestStore_SetApproverTier(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	row := &store.RequestRow{
+		ID: newReqID(), State: store.StatePending,
+		RequesterIdentity: "alice@example.com", Provider: "mock",
+		Role: "r", ResourceScope: "s", DurationSeconds: 3600,
+		Reason: "set approver tier test", ApproverTier: "ai_review",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := testStore.CreateRequest(ctx, row); err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+
+	// Flip to "human".
+	if err := testStore.SetApproverTier(ctx, row.ID, "human"); err != nil {
+		t.Fatalf("SetApproverTier: %v", err)
+	}
+
+	got, err := testStore.GetRequest(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetRequest after SetApproverTier: %v", err)
+	}
+	if got.ApproverTier != "human" {
+		t.Errorf("ApproverTier = %q, want %q", got.ApproverTier, "human")
+	}
+
+	// SetApproverTier on a non-existent ID returns ErrNotFound.
+	err = testStore.SetApproverTier(ctx, "req_does_not_exist", "human")
+	if err == nil {
+		t.Fatal("expected ErrNotFound for missing ID, got nil")
+	}
+}
+
 // TestStore_AuditHashChain verifies the tamper-evident hash chain on audit events.
 //
 // The hash formula (from store/audit.go:computeHash and ADR-011) is:

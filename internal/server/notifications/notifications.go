@@ -17,6 +17,10 @@ type EventType string
 const (
 	EventRequestCreated EventType = "request_created"
 	EventApproved       EventType = "approved"
+	EventAutoApproved   EventType = "auto_approved"
+	EventAIApproved     EventType = "ai_approved"
+	EventAIDenied       EventType = "ai_denied"
+	EventAIEscalated    EventType = "ai_escalated"
 	EventDenied         EventType = "denied"
 	EventExpired        EventType = "expired"
 	EventRevoked        EventType = "revoked"

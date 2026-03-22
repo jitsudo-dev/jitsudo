@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/testutil"
 	"github.com/jitsudo-dev/jitsudo/pkg/client"
 )
+
+const testMCPToken = "integration-test-mcp-token"
 
 // Package-level state shared across all server integration tests.
 var (
@@ -106,11 +109,16 @@ func mustStartServerMain(dbURL, oidcIssuer string) (grpcAddr, httpAddr string) {
 	}
 
 	srv := server.New(server.Config{
-		GRPCAddr:     grpcAddr,
-		HTTPAddr:     httpAddr,
-		DatabaseURL:  dbURL,
-		OIDCIssuer:   oidcIssuer,
-		OIDCClientID: "jitsudo-cli",
+		GRPCAddr:         grpcAddr,
+		HTTPAddr:         httpAddr,
+		DatabaseURL:      dbURL,
+		OIDCIssuer:       oidcIssuer,
+		OIDCClientID:     "jitsudo-cli",
+		MCPToken:         testMCPToken,
+		MCPAgentIdentity: "test-mcp-agent",
+		// Dex static-password users don't carry a groups claim, so we grant
+		// Alice admin access via the email allowlist instead.
+		AdminEmails: []string{"alice@example.com"},
 	}, s)
 
 	go func() {
@@ -710,6 +718,622 @@ func TestAPI_BreakGlass_ImmediateActive(t *testing.T) {
 	}
 	if len(creds.GetGrant().GetCredentials()) == 0 {
 		t.Error("break-glass: expected non-empty credentials")
+	}
+}
+
+// ── Tier 1: Auto-Approve ──────────────────────────────────────────────────────
+
+// autoApprovalRego is the shared Rego policy for auto-approve integration tests.
+// It routes role "auto-approve-role" to Tier 1 (auto).
+// Note: no "default allow" or "default approver_tier" here — the dev seed policy
+// already provides "default allow := true", and evalTier defaults to "human".
+// Defining these defaults again causes OPA compile errors (duplicate default rules).
+const autoApprovalRego = `package jitsudo.approval
+import rego.v1
+
+approver_tier := "auto" if {
+    input.request.role == "auto-approve-role"
+    input.request.provider == "mock"
+}
+`
+
+// withAutoApprovalPolicy applies a test approval policy that auto-approves
+// "auto-approve-role" requests, calls fn, and cleans up the policy after.
+// The test must NOT be run with t.Parallel() as it mutates shared policy state.
+func withAutoApprovalPolicy(t *testing.T, fn func()) {
+	t.Helper()
+	ctx := context.Background()
+	policyName := "test-policy-" + ulid.Make().String()
+
+	resp, err := aliceClient.Service().ApplyPolicy(ctx, &jitsudov1alpha1.ApplyPolicyInput{
+		Name:        policyName,
+		Type:        jitsudov1alpha1.PolicyType_POLICY_TYPE_APPROVAL,
+		Rego:        autoApprovalRego,
+		Description: "Tier 1 auto-approve integration test",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("withAutoApprovalPolicy: ApplyPolicy: %v", err)
+	}
+	t.Cleanup(func() {
+		aliceClient.Service().DeletePolicy(ctx, &jitsudov1alpha1.DeletePolicyInput{Id: resp.Policy.Id}) //nolint:errcheck
+	})
+
+	fn()
+}
+
+// TestAPI_TierRouting_AutoApprove verifies that a policy returning approver_tier="auto"
+// causes CreateRequest to return a fully ACTIVE grant (Tier 1 synchronous flow).
+func TestAPI_TierRouting_AutoApprove(t *testing.T) {
+	withAutoApprovalPolicy(t, func() {
+		ctx := context.Background()
+		resp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+			Provider:        "mock",
+			Role:            "auto-approve-role",
+			ResourceScope:   "tier1-test-scope",
+			DurationSeconds: 300,
+			Reason:          "TestAPI_TierRouting_AutoApprove",
+		})
+		if err != nil {
+			t.Fatalf("CreateRequest: %v", err)
+		}
+		if resp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+			t.Errorf("State: got %v, want ACTIVE", resp.Request.State)
+		}
+		if resp.Request.ApproverIdentity != "policy" {
+			t.Errorf("ApproverIdentity: got %q, want %q", resp.Request.ApproverIdentity, "policy")
+		}
+		if resp.Request.ApproverTier != "auto" {
+			t.Errorf("ApproverTier: got %q, want %q", resp.Request.ApproverTier, "auto")
+		}
+	})
+}
+
+// TestAPI_TierRouting_HumanDefault verifies that a request routed to tier "human"
+// stays PENDING, waiting for a human approver.
+func TestAPI_TierRouting_HumanDefault(t *testing.T) {
+	ctx := context.Background()
+	// The seeded dev-allow-all-approval policy has no approver_tier rule → defaults to "human".
+	resp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+		Provider:        "mock",
+		Role:            "test-role",
+		ResourceScope:   "human-tier-test-scope",
+		DurationSeconds: 300,
+		Reason:          "TestAPI_TierRouting_HumanDefault",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+	if resp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_PENDING {
+		t.Errorf("State: got %v, want PENDING", resp.Request.State)
+	}
+	if resp.Request.ApproverTier != "human" {
+		t.Errorf("ApproverTier: got %q, want %q", resp.Request.ApproverTier, "human")
+	}
+}
+
+// TestAPI_TierRouting_AIReview verifies that a request routed to tier "ai_review"
+// stays PENDING with approver_tier="ai_review" (MCP approver handles it in Phase 5).
+func TestAPI_TierRouting_AIReview(t *testing.T) {
+	ctx := context.Background()
+	policyName := "test-policy-" + ulid.Make().String()
+
+	resp, err := aliceClient.Service().ApplyPolicy(ctx, &jitsudov1alpha1.ApplyPolicyInput{
+		Name: policyName,
+		Type: jitsudov1alpha1.PolicyType_POLICY_TYPE_APPROVAL,
+		Rego: `package jitsudo.approval
+import rego.v1
+
+approver_tier := "ai_review" if {
+    input.request.role == "ai-review-role"
+}
+`,
+		Description: "Tier 2 ai_review test",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy: %v", err)
+	}
+	t.Cleanup(func() {
+		aliceClient.Service().DeletePolicy(ctx, &jitsudov1alpha1.DeletePolicyInput{Id: resp.Policy.Id}) //nolint:errcheck
+	})
+
+	createResp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+		Provider:        "mock",
+		Role:            "ai-review-role",
+		ResourceScope:   "ai-tier-test-scope",
+		DurationSeconds: 300,
+		Reason:          "TestAPI_TierRouting_AIReview",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+	if createResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_PENDING {
+		t.Errorf("State: got %v, want PENDING (ai_review waits for MCP agent)", createResp.Request.State)
+	}
+	if createResp.Request.ApproverTier != "ai_review" {
+		t.Errorf("ApproverTier: got %q, want %q", createResp.Request.ApproverTier, "ai_review")
+	}
+}
+
+// TestAPI_AutoApprove_CredentialsAccessible verifies that after a Tier 1 auto-approve,
+// the requester can immediately retrieve credentials via GetCredentials.
+func TestAPI_AutoApprove_CredentialsAccessible(t *testing.T) {
+	withAutoApprovalPolicy(t, func() {
+		ctx := context.Background()
+		resp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+			Provider:        "mock",
+			Role:            "auto-approve-role",
+			ResourceScope:   "creds-test-scope",
+			DurationSeconds: 300,
+			Reason:          "TestAPI_AutoApprove_CredentialsAccessible",
+		})
+		if err != nil {
+			t.Fatalf("CreateRequest: %v", err)
+		}
+		if resp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+			t.Fatalf("expected ACTIVE, got %v", resp.Request.State)
+		}
+
+		creds, err := aliceClient.Service().GetCredentials(ctx, &jitsudov1alpha1.GetCredentialsInput{
+			RequestId: resp.Request.Id,
+		})
+		if err != nil {
+			t.Fatalf("GetCredentials: %v", err)
+		}
+		if len(creds.GetGrant().GetCredentials()) == 0 {
+			t.Error("expected non-empty credentials after auto-approve")
+		}
+	})
+}
+
+// TestAPI_AutoApprove_AuditTrail verifies that Tier 1 auto-approval writes
+// request.auto_approved (not request.approved) to the audit log.
+func TestAPI_AutoApprove_AuditTrail(t *testing.T) {
+	withAutoApprovalPolicy(t, func() {
+		ctx := context.Background()
+		resp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+			Provider:        "mock",
+			Role:            "auto-approve-role",
+			ResourceScope:   "audit-test-scope",
+			DurationSeconds: 300,
+			Reason:          "TestAPI_AutoApprove_AuditTrail",
+		})
+		if err != nil {
+			t.Fatalf("CreateRequest: %v", err)
+		}
+
+		auditResp, err := aliceClient.Service().QueryAudit(ctx, &jitsudov1alpha1.QueryAuditInput{
+			RequestId: resp.Request.Id,
+		})
+		if err != nil {
+			t.Fatalf("QueryAudit: %v", err)
+		}
+
+		var actions []string
+		for _, e := range auditResp.Events {
+			actions = append(actions, e.Action)
+		}
+
+		wantAutoApproved := "request.auto_approved"
+		wantGrantIssued := "grant.issued"
+		found := map[string]bool{}
+		for _, a := range actions {
+			found[a] = true
+		}
+		if !found[wantAutoApproved] {
+			t.Errorf("audit trail missing %q; got actions: %v", wantAutoApproved, actions)
+		}
+		if !found[wantGrantIssued] {
+			t.Errorf("audit trail missing %q; got actions: %v", wantGrantIssued, actions)
+		}
+		// request.approved must NOT appear — that's the human approval action
+		if found["request.approved"] {
+			t.Errorf("audit trail should not contain %q for auto-approved request; got actions: %v", "request.approved", actions)
+		}
+	})
+}
+
+// ── Tier 2: MCP Approver ──────────────────────────────────────────────────────
+
+// mcpPost sends a JSON-RPC request to the /mcp endpoint and returns the response.
+func mcpPost(t *testing.T, method string, params any) map[string]any {
+	t.Helper()
+	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
+	if params != nil {
+		body["params"] = params
+	}
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, "http://"+testHTTPAddr+"/mcp", strings.NewReader(string(b)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testMCPToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("mcpPost %s: %v", method, err)
+	}
+	defer resp.Body.Close()
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("mcpPost decode: %v", err)
+	}
+	return result
+}
+
+// withAIReviewPolicy applies a test approval policy that routes "ai-review-role"
+// requests to ai_review, calls fn, and cleans up afterward.
+func withAIReviewPolicy(t *testing.T, fn func()) {
+	t.Helper()
+	ctx := context.Background()
+	policyName := "test-policy-" + ulid.Make().String()
+	resp, err := aliceClient.Service().ApplyPolicy(ctx, &jitsudov1alpha1.ApplyPolicyInput{
+		Name: policyName,
+		Type: jitsudov1alpha1.PolicyType_POLICY_TYPE_APPROVAL,
+		Rego: `package jitsudo.approval
+import rego.v1
+
+approver_tier := "ai_review" if {
+    input.request.role == "ai-review-role"
+    input.request.provider == "mock"
+}
+`,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("withAIReviewPolicy: %v", err)
+	}
+	t.Cleanup(func() {
+		aliceClient.Service().DeletePolicy(ctx, &jitsudov1alpha1.DeletePolicyInput{Id: resp.Policy.Id}) //nolint:errcheck
+	})
+	fn()
+}
+
+// TestAPI_MCP_Initialize verifies the MCP endpoint responds to initialize.
+func TestAPI_MCP_Initialize(t *testing.T) {
+	result := mcpPost(t, "initialize", map[string]any{
+		"protocolVersion": "2025-03-26",
+		"clientInfo":      map[string]any{"name": "test", "version": "1"},
+	})
+	if result["error"] != nil {
+		t.Fatalf("initialize error: %v", result["error"])
+	}
+	r, ok := result["result"].(map[string]any)
+	if !ok || r == nil {
+		t.Fatalf("result field missing or wrong type: %v", result["result"])
+	}
+	if pv, _ := r["protocolVersion"].(string); pv == "" {
+		t.Error("expected non-empty protocolVersion")
+	}
+}
+
+// TestAPI_MCP_ToolsList verifies the tools/list endpoint returns the five tools.
+func TestAPI_MCP_ToolsList(t *testing.T) {
+	result := mcpPost(t, "tools/list", nil)
+	if result["error"] != nil {
+		t.Fatalf("tools/list error: %v", result["error"])
+	}
+	r, _ := result["result"].(map[string]any)
+	tools, _ := r["tools"].([]any)
+	if len(tools) < 5 {
+		t.Errorf("expected ≥5 tools, got %d", len(tools))
+	}
+}
+
+// TestAPI_MCP_BadToken verifies that an invalid token is rejected.
+func TestAPI_MCP_BadToken(t *testing.T) {
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+	req, _ := http.NewRequest(http.MethodPost, "http://"+testHTTPAddr+"/mcp", strings.NewReader(string(b)))
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("got %d, want 401", resp.StatusCode)
+	}
+}
+
+// TestAPI_Tier2_MCPApprove verifies that an MCP approve call transitions an
+// ai_review request to ACTIVE and records AI reasoning in the audit trail.
+func TestAPI_Tier2_MCPApprove(t *testing.T) {
+	withAIReviewPolicy(t, func() {
+		ctx := context.Background()
+
+		// Create a request that will be routed to ai_review.
+		createResp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+			Provider:        "mock",
+			Role:            "ai-review-role",
+			ResourceScope:   "mcp-approve-test",
+			DurationSeconds: 300,
+			Reason:          "TestAPI_Tier2_MCPApprove",
+		})
+		if err != nil {
+			t.Fatalf("CreateRequest: %v", err)
+		}
+		reqID := createResp.Request.Id
+		if createResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_PENDING {
+			t.Fatalf("expected PENDING, got %v", createResp.Request.State)
+		}
+
+		// MCP agent approves with reasoning.
+		reasoning := `{"assessment":"low risk","blast_radius":"read-only scope","confidence":0.92}`
+		mcpResult := mcpPost(t, "tools/call", map[string]any{
+			"name": "approve_request",
+			"arguments": map[string]any{
+				"request_id": reqID,
+				"reasoning":  reasoning,
+			},
+		})
+		if mcpResult["error"] != nil {
+			t.Fatalf("MCP approve error: %v", mcpResult["error"])
+		}
+
+		// Request should now be ACTIVE.
+		getResp, err := aliceClient.Service().GetRequest(ctx, &jitsudov1alpha1.GetRequestInput{Id: reqID})
+		if err != nil {
+			t.Fatalf("GetRequest: %v", err)
+		}
+		if getResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+			t.Errorf("State: got %v, want ACTIVE", getResp.Request.State)
+		}
+		if getResp.Request.ApproverIdentity != "test-mcp-agent" {
+			t.Errorf("ApproverIdentity: got %q, want %q", getResp.Request.ApproverIdentity, "test-mcp-agent")
+		}
+
+		// AI reasoning should appear in audit log.
+		auditResp, err := aliceClient.Service().QueryAudit(ctx, &jitsudov1alpha1.QueryAuditInput{RequestId: reqID})
+		if err != nil {
+			t.Fatalf("QueryAudit: %v", err)
+		}
+		found := false
+		for _, e := range auditResp.Events {
+			if e.Action == "request.ai_approved" {
+				found = true
+				if !strings.Contains(e.DetailsJson, "assessment") {
+					t.Errorf("ai_approved audit entry details missing reasoning: %s", e.DetailsJson)
+				}
+			}
+		}
+		if !found {
+			t.Error("audit trail missing request.ai_approved")
+		}
+	})
+}
+
+// TestAPI_Tier2_MCPEscalate verifies that an MCP escalate call flips the
+// approver_tier to "human" so the request enters the human approval queue.
+func TestAPI_Tier2_MCPEscalate(t *testing.T) {
+	withAIReviewPolicy(t, func() {
+		ctx := context.Background()
+
+		createResp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+			Provider:        "mock",
+			Role:            "ai-review-role",
+			ResourceScope:   "mcp-escalate-test",
+			DurationSeconds: 300,
+			Reason:          "TestAPI_Tier2_MCPEscalate",
+		})
+		if err != nil {
+			t.Fatalf("CreateRequest: %v", err)
+		}
+		reqID := createResp.Request.Id
+
+		// MCP agent escalates.
+		mcpResult := mcpPost(t, "tools/call", map[string]any{
+			"name": "escalate_to_human",
+			"arguments": map[string]any{
+				"request_id": reqID,
+				"reasoning":  "uncertainty — linked incident INC-9999 may broaden scope",
+			},
+		})
+		if mcpResult["error"] != nil {
+			t.Fatalf("MCP escalate error: %v", mcpResult["error"])
+		}
+
+		// Request should still be PENDING but approver_tier should be "human".
+		getResp, err := aliceClient.Service().GetRequest(ctx, &jitsudov1alpha1.GetRequestInput{Id: reqID})
+		if err != nil {
+			t.Fatalf("GetRequest: %v", err)
+		}
+		if getResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_PENDING {
+			t.Errorf("State: got %v, want PENDING", getResp.Request.State)
+		}
+		if getResp.Request.ApproverTier != "human" {
+			t.Errorf("ApproverTier: got %q, want %q", getResp.Request.ApproverTier, "human")
+		}
+
+		// Audit trail should contain request.ai_escalated.
+		auditResp, err := aliceClient.Service().QueryAudit(ctx, &jitsudov1alpha1.QueryAuditInput{RequestId: reqID})
+		if err != nil {
+			t.Fatalf("QueryAudit: %v", err)
+		}
+		found := false
+		for _, e := range auditResp.Events {
+			if e.Action == "request.ai_escalated" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("audit trail missing request.ai_escalated")
+		}
+
+		// After escalation to human, a human should be able to approve normally.
+		if _, err := bobClient.Service().ApproveRequest(ctx, &jitsudov1alpha1.ApproveRequestInput{
+			RequestId: reqID,
+			Comment:   "approved after AI escalation",
+		}); err != nil {
+			t.Fatalf("ApproveRequest (post-escalation): %v", err)
+		}
+		finalResp, err := aliceClient.Service().GetRequest(ctx, &jitsudov1alpha1.GetRequestInput{Id: reqID})
+		if err != nil {
+			t.Fatalf("GetRequest (final): %v", err)
+		}
+		if finalResp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+			t.Errorf("final State: got %v, want ACTIVE", finalResp.Request.State)
+		}
+	})
+}
+
+// ── Trust Tier ────────────────────────────────────────────────────────────────
+
+// TestAPI_TrustTier_SetAndGet verifies the full admin round-trip for trust tier
+// assignment: set tier, then read it back via GetPrincipal.
+func TestAPI_TrustTier_SetAndGet(t *testing.T) {
+	ctx := context.Background()
+	identity := "alice@example.com"
+
+	// Alice is in jitsudo-admins in the test Dex config — she can set tiers.
+	resp, err := aliceClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{
+		Identity:  identity,
+		TrustTier: 3,
+		Notes:     "integration test",
+	})
+	if err != nil {
+		t.Fatalf("SetPrincipalTrustTier: %v", err)
+	}
+	if resp.Principal.TrustTier != 3 {
+		t.Errorf("TrustTier: got %d, want 3", resp.Principal.TrustTier)
+	}
+	if resp.Principal.EnrolledBy != identity {
+		t.Errorf("EnrolledBy: got %q, want %q", resp.Principal.EnrolledBy, identity)
+	}
+
+	// Read back via GetPrincipal.
+	getResp, err := aliceClient.Service().GetPrincipal(ctx, &jitsudov1alpha1.GetPrincipalInput{
+		Identity: identity,
+	})
+	if err != nil {
+		t.Fatalf("GetPrincipal: %v", err)
+	}
+	if getResp.Principal.TrustTier != 3 {
+		t.Errorf("GetPrincipal TrustTier: got %d, want 3", getResp.Principal.TrustTier)
+	}
+
+	// Cleanup: reset to tier 0.
+	t.Cleanup(func() {
+		aliceClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{ //nolint:errcheck
+			Identity: identity, TrustTier: 0,
+		})
+	})
+}
+
+// TestAPI_TrustTier_NonAdminDenied verifies that a non-admin cannot set trust tiers.
+func TestAPI_TrustTier_NonAdminDenied(t *testing.T) {
+	ctx := context.Background()
+	// Charlie is not in jitsudo-admins.
+	_, err := charlieClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{
+		Identity:  "charlie@example.com",
+		TrustTier: 2,
+	})
+	if grpcCode(err) != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got %v", grpcCode(err))
+	}
+}
+
+// TestAPI_TrustTier_InvalidRange verifies that out-of-range tier values are rejected.
+func TestAPI_TrustTier_InvalidRange(t *testing.T) {
+	ctx := context.Background()
+	_, err := aliceClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{
+		Identity:  "alice@example.com",
+		TrustTier: 5, // out of range
+	})
+	if grpcCode(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument for tier=5, got %v", grpcCode(err))
+	}
+}
+
+// TestAPI_TrustTier_GetUnknown verifies that GetPrincipal on an unseen identity
+// returns NotFound.
+func TestAPI_TrustTier_GetUnknown(t *testing.T) {
+	ctx := context.Background()
+	_, err := aliceClient.Service().GetPrincipal(ctx, &jitsudov1alpha1.GetPrincipalInput{
+		Identity: "nobody-" + ulid.Make().String() + "@example.com",
+	})
+	if grpcCode(err) != codes.NotFound {
+		t.Errorf("expected NotFound for unknown principal, got %v", grpcCode(err))
+	}
+}
+
+// TestAPI_TrustTier_InPolicy verifies that input.context.trust_tier is populated
+// in OPA evaluations. A policy that gates auto-approve on trust_tier >= 3 should
+// route tier-3 principals to Tier 1, while tier-0 principals go to human.
+func TestAPI_TrustTier_InPolicy(t *testing.T) {
+	ctx := context.Background()
+	identity := "alice@example.com"
+
+	// Elevate Alice to trust tier 3.
+	_, err := aliceClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{
+		Identity: identity, TrustTier: 3,
+	})
+	if err != nil {
+		t.Fatalf("SetPrincipalTrustTier: %v", err)
+	}
+	t.Cleanup(func() {
+		aliceClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{ //nolint:errcheck
+			Identity: identity, TrustTier: 0,
+		})
+	})
+
+	// Apply a policy that auto-approves when trust_tier >= 3 and role is "trust-gated-role".
+	policyName := "test-policy-" + ulid.Make().String()
+	pResp, err := aliceClient.Service().ApplyPolicy(ctx, &jitsudov1alpha1.ApplyPolicyInput{
+		Name: policyName,
+		Type: jitsudov1alpha1.PolicyType_POLICY_TYPE_APPROVAL,
+		// Note: no "default allow" or "default approver_tier" — the dev seed
+		// policy already defines them; duplicates cause OPA compile errors.
+		Rego: `package jitsudo.approval
+import rego.v1
+
+approver_tier := "auto" if {
+    input.context.trust_tier >= 3
+    input.request.role == "trust-gated-role"
+    input.request.provider == "mock"
+}
+`,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("ApplyPolicy: %v", err)
+	}
+	t.Cleanup(func() {
+		aliceClient.Service().DeletePolicy(ctx, &jitsudov1alpha1.DeletePolicyInput{Id: pResp.Policy.Id}) //nolint:errcheck
+	})
+
+	// With trust_tier=3, should auto-approve → ACTIVE.
+	resp, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+		Provider:        "mock",
+		Role:            "trust-gated-role",
+		ResourceScope:   "trust-tier-test",
+		DurationSeconds: 300,
+		Reason:          "TestAPI_TrustTier_InPolicy tier-3",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest (tier-3): %v", err)
+	}
+	if resp.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_ACTIVE {
+		t.Errorf("tier-3 State: got %v, want ACTIVE", resp.Request.State)
+	}
+
+	// Now drop Alice to tier 0 — same policy should route to human → PENDING.
+	_, err = aliceClient.Service().SetPrincipalTrustTier(ctx, &jitsudov1alpha1.SetPrincipalTrustTierInput{
+		Identity: identity, TrustTier: 0,
+	})
+	if err != nil {
+		t.Fatalf("SetPrincipalTrustTier (downgrade): %v", err)
+	}
+
+	resp2, err := aliceClient.Service().CreateRequest(ctx, &jitsudov1alpha1.CreateRequestInput{
+		Provider:        "mock",
+		Role:            "trust-gated-role",
+		ResourceScope:   "trust-tier-test-2",
+		DurationSeconds: 300,
+		Reason:          "TestAPI_TrustTier_InPolicy tier-0",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest (tier-0): %v", err)
+	}
+	if resp2.Request.State != jitsudov1alpha1.RequestState_REQUEST_STATE_PENDING {
+		t.Errorf("tier-0 State: got %v, want PENDING", resp2.Request.State)
 	}
 }
 

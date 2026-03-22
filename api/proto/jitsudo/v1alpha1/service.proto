@@ -6,6 +6,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "jitsudo/v1alpha1/audit.proto";
 import "jitsudo/v1alpha1/policies.proto";
+import "jitsudo/v1alpha1/principals.proto";
 import "jitsudo/v1alpha1/requests.proto";
 
 option go_package = "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1;jitsudov1alpha1";
@@ -124,6 +125,24 @@ service JitsudoService {
     option (google.api.http) = {
       post: "/api/v1alpha1/admin/reload-policies"
       body: "*"
+    };
+  }
+
+  // --- Principals ---
+
+  // SetPrincipalTrustTier assigns a trust tier (0–4) to a principal.
+  // Admin-only: caller must be in the "jitsudo-admins" group.
+  rpc SetPrincipalTrustTier(SetPrincipalTrustTierInput) returns (SetPrincipalTrustTierResponse) {
+    option (google.api.http) = {
+      put: "/api/v1alpha1/principals/{identity}/trust-tier"
+      body: "*"
+    };
+  }
+
+  // GetPrincipal returns the enrollment record for a principal.
+  rpc GetPrincipal(GetPrincipalInput) returns (GetPrincipalResponse) {
+    option (google.api.http) = {
+      get: "/api/v1alpha1/principals/{identity}"
     };
   }
 }

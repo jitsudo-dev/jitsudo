@@ -28,10 +28,27 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/store"
 )
 
+// engineStore is the subset of *store.Store methods used by the Engine.
+// Extracted as an interface so unit tests can substitute an in-memory stub
+// without requiring a live database.
+type engineStore interface {
+	UpsertPrincipalLastSeen(ctx context.Context, identity string) error
+	CreateRequest(ctx context.Context, req *store.RequestRow) error
+	GetRequest(ctx context.Context, id string) (*store.RequestRow, error)
+	TransitionRequest(ctx context.Context, id string, fromState, toState store.RequestState, u store.RequestUpdate) (*store.RequestRow, error)
+	SetApproverTier(ctx context.Context, id string, tier string) error
+	ListActiveExpired(ctx context.Context) ([]*store.RequestRow, error)
+}
+
+// auditAppender is the subset of *audit.Logger used by the Engine.
+type auditAppender interface {
+	Append(ctx context.Context, e audit.Entry) error
+}
+
 // Engine drives elevation request lifecycle transitions.
 type Engine struct {
-	store         *store.Store
-	audit         *audit.Logger
+	store         engineStore
+	audit         auditAppender
 	policy        *policy.Engine
 	registry      *providers.Registry
 	notifications *notifications.Dispatcher
@@ -40,7 +57,7 @@ type Engine struct {
 // NewEngine wires together the store, audit logger, policy engine, provider
 // registry, and optional notification dispatcher.
 // Passing nil for dispatcher disables notifications.
-func NewEngine(s *store.Store, a *audit.Logger, p *policy.Engine, r *providers.Registry, n *notifications.Dispatcher) *Engine {
+func NewEngine(s engineStore, a auditAppender, p *policy.Engine, r *providers.Registry, n *notifications.Dispatcher) *Engine {
 	return &Engine{store: s, audit: a, policy: p, registry: r, notifications: n}
 }
 
@@ -74,6 +91,9 @@ func (e *Engine) CreateRequest(ctx context.Context, identity *auth.Identity, inp
 		return e.createBreakGlass(ctx, identity, input, p)
 	}
 
+	// Record principal activity (fire-and-forget; never blocks the request path).
+	_ = e.store.UpsertPrincipalLastSeen(ctx, identity.Email)
+
 	// Policy eligibility check.
 	allowed, reason, err := e.policy.EvalEligibility(ctx, identity, input)
 	if err != nil {
@@ -84,6 +104,12 @@ func (e *Engine) CreateRequest(ctx context.Context, identity *auth.Identity, inp
 			reason = "policy denied the request"
 		}
 		return nil, fmt.Errorf("workflow: not eligible: %s", reason)
+	}
+
+	// Determine approval tier from policy.
+	tier, err := e.policy.EvalApprovalTier(ctx, identity, input)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: approval tier eval: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -98,6 +124,7 @@ func (e *Engine) CreateRequest(ctx context.Context, identity *auth.Identity, inp
 		Reason:            input.GetReason(),
 		BreakGlass:        false,
 		Metadata:          input.GetMetadata(),
+		ApproverTier:      tier,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -113,6 +140,11 @@ func (e *Engine) CreateRequest(ctx context.Context, identity *auth.Identity, inp
 		ResourceScope: req.ResourceScope,
 		Outcome:       audit.OutcomeSuccess,
 	})
+
+	// Tier 1: policy-driven auto-approve — issue credentials synchronously.
+	if tier == "auto" {
+		return e.autoApproveRequest(ctx, identity, req, p)
+	}
 
 	e.notifications.Notify(ctx, notifications.Event{
 		Type:      notifications.EventRequestCreated,
@@ -240,6 +272,237 @@ func (e *Engine) createBreakGlass(ctx context.Context, identity *auth.Identity, 
 		Role:      req.Role,
 		Scope:     req.ResourceScope,
 		ExpiresAt: expiresAt,
+	})
+
+	return req, nil
+}
+
+// autoApproveRequest handles Tier 1 policy-driven auto-approval.
+// The request was already written as PENDING; this method transitions it through
+// APPROVED → ACTIVE immediately, using "policy" as the approver identity.
+// The full audit trail is preserved and an EventAutoApproved notification is fired.
+func (e *Engine) autoApproveRequest(ctx context.Context, identity *auth.Identity, req *store.RequestRow, p providers.Provider) (*store.RequestRow, error) {
+	// PENDING → APPROVED (policy-driven, no human approver).
+	req, err := e.store.TransitionRequest(ctx, req.ID,
+		store.StatePending, store.StateApproved,
+		store.RequestUpdate{
+			ApproverIdentity: "policy",
+			ApproverComment:  "Auto-approved by policy (Tier 1)",
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: auto-approve transition: %w", err)
+	}
+
+	_ = e.audit.Append(ctx, audit.Entry{
+		ActorIdentity: identity.Email,
+		Action:        audit.ActionRequestAutoApproved,
+		RequestID:     req.ID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+	})
+
+	// Issue credentials via provider.
+	provReq := providers.ElevationRequest{
+		RequestID:     req.ID,
+		UserIdentity:  req.RequesterIdentity,
+		Provider:      req.Provider,
+		RoleName:      req.Role,
+		ResourceScope: req.ResourceScope,
+		Duration:      time.Duration(req.DurationSeconds) * time.Second,
+		Reason:        req.Reason,
+	}
+	grant, err := p.Grant(ctx, provReq)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: auto-approve provider grant: %w", err)
+	}
+
+	// APPROVED → ACTIVE.
+	expiresAt := grant.ExpiresAt
+	req, err = e.store.TransitionRequest(ctx, req.ID,
+		store.StateApproved, store.StateActive,
+		store.RequestUpdate{
+			ExpiresAt:       &expiresAt,
+			RevokeToken:     grant.RevokeToken,
+			CredentialsJSON: grant.Credentials,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: auto-approve active transition: %w", err)
+	}
+
+	_ = e.audit.Append(ctx, audit.Entry{
+		ActorIdentity: identity.Email,
+		Action:        audit.ActionGrantIssued,
+		RequestID:     req.ID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+	})
+
+	e.notifications.Notify(ctx, notifications.Event{
+		Type:      notifications.EventAutoApproved,
+		RequestID: req.ID,
+		Actor:     identity.Email,
+		Provider:  req.Provider,
+		Role:      req.Role,
+		Scope:     req.ResourceScope,
+		ExpiresAt: expiresAt,
+	})
+
+	return req, nil
+}
+
+// AIApproveRequest is called by the MCP approver agent to approve a Tier 2 request.
+// It transitions PENDING → APPROVED → ACTIVE, stores the AI reasoning in the audit
+// log, and fires an EventAIApproved notification.
+func (e *Engine) AIApproveRequest(ctx context.Context, requestID, agentIdentity, reasoning string) (*store.RequestRow, error) {
+	req, err := e.store.TransitionRequest(ctx, requestID,
+		store.StatePending, store.StateApproved,
+		store.RequestUpdate{
+			ApproverIdentity: agentIdentity,
+			ApproverComment:  "Approved by AI agent (Tier 2)",
+			AIReasoningJSON:  reasoning,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: AI approve transition: %w", err)
+	}
+
+	_ = e.audit.Append(ctx, audit.Entry{
+		ActorIdentity: agentIdentity,
+		Action:        audit.ActionRequestAIApproved,
+		RequestID:     requestID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+		DetailsJSON:   reasoning,
+	})
+
+	p := e.registry.Get(req.Provider)
+	if p == nil {
+		return nil, fmt.Errorf("workflow: AI approve: unknown provider %q", req.Provider)
+	}
+	provReq := providers.ElevationRequest{
+		RequestID:     req.ID,
+		UserIdentity:  req.RequesterIdentity,
+		Provider:      req.Provider,
+		RoleName:      req.Role,
+		ResourceScope: req.ResourceScope,
+		Duration:      time.Duration(req.DurationSeconds) * time.Second,
+		Reason:        req.Reason,
+	}
+	grant, err := p.Grant(ctx, provReq)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: AI approve provider grant: %w", err)
+	}
+
+	expiresAt := grant.ExpiresAt
+	req, err = e.store.TransitionRequest(ctx, req.ID,
+		store.StateApproved, store.StateActive,
+		store.RequestUpdate{
+			ExpiresAt:       &expiresAt,
+			RevokeToken:     grant.RevokeToken,
+			CredentialsJSON: grant.Credentials,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: AI approve active transition: %w", err)
+	}
+
+	_ = e.audit.Append(ctx, audit.Entry{
+		ActorIdentity: agentIdentity,
+		Action:        audit.ActionGrantIssued,
+		RequestID:     req.ID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+	})
+
+	e.notifications.Notify(ctx, notifications.Event{
+		Type:      notifications.EventAIApproved,
+		RequestID: requestID,
+		Actor:     agentIdentity,
+		Provider:  req.Provider,
+		Role:      req.Role,
+		Scope:     req.ResourceScope,
+		ExpiresAt: expiresAt,
+	})
+
+	return req, nil
+}
+
+// AIDenyRequest is called by the MCP approver agent to deny a Tier 2 request.
+// Transitions PENDING → REJECTED and stores the AI reasoning.
+func (e *Engine) AIDenyRequest(ctx context.Context, requestID, agentIdentity, reasoning string) (*store.RequestRow, error) {
+	req, err := e.store.TransitionRequest(ctx, requestID,
+		store.StatePending, store.StateRejected,
+		store.RequestUpdate{
+			ApproverIdentity: agentIdentity,
+			ApproverComment:  "Denied by AI agent (Tier 2)",
+			AIReasoningJSON:  reasoning,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: AI deny transition: %w", err)
+	}
+
+	_ = e.audit.Append(ctx, audit.Entry{
+		ActorIdentity: agentIdentity,
+		Action:        audit.ActionRequestAIDenied,
+		RequestID:     requestID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+		DetailsJSON:   reasoning,
+	})
+
+	e.notifications.Notify(ctx, notifications.Event{
+		Type:      notifications.EventAIDenied,
+		RequestID: requestID,
+		Actor:     agentIdentity,
+		Provider:  req.Provider,
+		Role:      req.Role,
+		Scope:     req.ResourceScope,
+		Reason:    reasoning,
+	})
+
+	return req, nil
+}
+
+// AIEscalateRequest is called by the MCP approver agent to escalate a Tier 2
+// request to human review. Flips approver_tier to "human" so it enters the
+// normal human approval queue. Does not change state (stays PENDING).
+func (e *Engine) AIEscalateRequest(ctx context.Context, requestID, agentIdentity, reasoning string) (*store.RequestRow, error) {
+	// Use a raw store update to flip the tier without a state change.
+	if err := e.store.SetApproverTier(ctx, requestID, "human"); err != nil {
+		return nil, fmt.Errorf("workflow: AI escalate set tier: %w", err)
+	}
+
+	req, err := e.store.GetRequest(ctx, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: AI escalate get request: %w", err)
+	}
+
+	_ = e.audit.Append(ctx, audit.Entry{
+		ActorIdentity: agentIdentity,
+		Action:        audit.ActionRequestAIEscalated,
+		RequestID:     requestID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+		DetailsJSON:   reasoning,
+	})
+
+	e.notifications.Notify(ctx, notifications.Event{
+		Type:      notifications.EventAIEscalated,
+		RequestID: requestID,
+		Actor:     agentIdentity,
+		Provider:  req.Provider,
+		Role:      req.Role,
+		Scope:     req.ResourceScope,
+		Reason:    reasoning,
 	})
 
 	return req, nil

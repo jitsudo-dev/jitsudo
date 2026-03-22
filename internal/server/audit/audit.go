@@ -14,12 +14,16 @@ import (
 
 // Action constants for all audit-logged events.
 const (
-	ActionRequestCreated  = "request.created"
-	ActionRequestApproved = "request.approved"
-	ActionRequestDenied   = "request.denied"
-	ActionGrantIssued     = "grant.issued"
-	ActionGrantExpired    = "grant.expired"
-	ActionGrantRevoked    = "grant.revoked"
+	ActionRequestCreated      = "request.created"
+	ActionRequestApproved     = "request.approved"
+	ActionRequestAutoApproved = "request.auto_approved"
+	ActionRequestDenied       = "request.denied"
+	ActionRequestAIApproved   = "request.ai_approved"
+	ActionRequestAIDenied     = "request.ai_denied"
+	ActionRequestAIEscalated  = "request.ai_escalated"
+	ActionGrantIssued         = "grant.issued"
+	ActionGrantExpired        = "grant.expired"
+	ActionGrantRevoked        = "grant.revoked"
 )
 
 // Outcome values.

@@ -16,6 +16,8 @@ package aws_test
 
 import (
 	"context"
+	"net"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -36,6 +38,28 @@ func localstackEndpoint(t *testing.T) string {
 		ep = "http://localhost:4566"
 	}
 	return ep
+}
+
+// requireLocalstack skips the test if LocalStack is not reachable.
+func requireLocalstack(t *testing.T, endpoint string) {
+	t.Helper()
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		t.Skipf("invalid LocalStack endpoint %q: %v", endpoint, err)
+	}
+	host := u.Host
+	if u.Port() == "" {
+		if u.Scheme == "https" {
+			host = net.JoinHostPort(u.Hostname(), "443")
+		} else {
+			host = net.JoinHostPort(u.Hostname(), "80")
+		}
+	}
+	conn, err := net.DialTimeout("tcp", host, 2*time.Second)
+	if err != nil {
+		t.Skipf("LocalStack not available at %s — skipping: %v", endpoint, err)
+	}
+	conn.Close()
 }
 
 // setupLocalstackRole creates an IAM role in LocalStack and returns its ARN.
@@ -74,6 +98,7 @@ func setupLocalstackRole(t *testing.T, endpoint string) string {
 
 func TestIntegration_AWSProvider_GrantRevokeIsActive(t *testing.T) {
 	endpoint := localstackEndpoint(t)
+	requireLocalstack(t, endpoint)
 	roleARN := setupLocalstackRole(t, endpoint)
 
 	// Extract account ID from the ARN (arn:aws:iam::<account>:role/<name>).

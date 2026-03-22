@@ -45,10 +45,12 @@ jitsudo exec <request-id> -- aws ecs describe-tasks --cluster prod
 ## Key Features
 
 - **Cloud-agnostic** — AWS, Azure, GCP, and Kubernetes from a single CLI
+- **Three-tier approval model** — Tier 1 OPA auto-approve, Tier 2 AI-assisted review, Tier 3 human approval
+- **AI-native** — MCP approver interface lets AI agents evaluate and approve Tier 2 requests with full reasoning in the audit log
+- **Principal trust tiers** — assign trust levels (0–4) per principal; policies gate auto-approval on `input.context.trust_tier`
 - **CLI-first** — designed for SREs who live in the terminal
-- **Approval workflows** — policy-driven approvals via OPA/Rego
-- **Tamper-evident audit log** — every action logged with a hash chain
-- **Break-glass mode** — emergency access with immediate alerts
+- **Tamper-evident audit log** — every action logged with a SHA-256 hash chain
+- **Break-glass mode** — emergency access with immediate alerts and mandatory review
 - **Self-hosted** — credentials never leave your infrastructure
 - **OIDC native** — integrates with Okta, Entra ID, Google Workspace, Keycloak
 
@@ -78,12 +80,15 @@ jitsudo follows the Kubernetes model: a versioned API server (control plane) tha
 jitsudo CLI  ──gRPC/REST──>  jitsudod Control Plane
                                ├── Auth (OIDC/JWKS)
                                ├── Policy Engine (OPA embedded)
+                               │     Three-tier routing: auto / ai_review / human
                                ├── Request State Machine
                                ├── Provider Adapter Layer
                                │     AWS / Azure / GCP / Kubernetes
                                ├── Audit Log (append-only, hash chain)
-                               └── Notification Dispatcher
-                                     Slack / email / webhook
+                               ├── Notification Dispatcher
+                               │     Slack / email
+                               └── MCP Approver Interface (POST /mcp)
+                                     Tier 2 AI agent connect here
 ```
 
 See [docs/adr/](docs/adr/) for Architecture Decision Records.
@@ -95,7 +100,6 @@ See [docs/adr/](docs/adr/) for Architecture Decision Records.
 | Docker Compose | Local / evaluation | `make docker-up` |
 | Bootstrap command | Single VM / bare metal | `jitsudo server init` |
 | Helm chart | Kubernetes (production) | `helm install jitsudo jitsudo/jitsudo` |
-| Terraform modules | Cloud-bootstrapped | `terraform apply` |
 
 ## License
 

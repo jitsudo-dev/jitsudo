@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,6 +22,15 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/store"
 	"github.com/oklog/ulid/v2"
 )
+
+// isAdmin returns true if the identity is a member of the "jitsudo-admins" group
+// or if their email appears in the handler's adminEmails allowlist.
+func (h *Handler) isAdmin(identity *auth.Identity) bool {
+	if slices.Contains(identity.Groups, "jitsudo-admins") {
+		return true
+	}
+	return slices.Contains(h.adminEmails, identity.Email)
+}
 
 // PolicyEngine is the subset of *policy.Engine methods called by Handler.
 type PolicyEngine interface {
@@ -37,20 +47,24 @@ type dataStore interface {
 	UpsertPolicy(ctx context.Context, p *store.PolicyRow) (*store.PolicyRow, error)
 	DeletePolicy(ctx context.Context, id string) error
 	QueryAuditEvents(ctx context.Context, f store.AuditFilter) ([]*store.AuditEventRow, error)
+	SetPrincipalTrustTier(ctx context.Context, identity string, tier int, enrolledBy string) (*store.PrincipalRow, error)
+	GetPrincipal(ctx context.Context, identity string) (*store.PrincipalRow, error)
 }
 
 // Handler implements jitsudov1alpha1.JitsudoServiceServer.
 type Handler struct {
 	jitsudov1alpha1.UnimplementedJitsudoServiceServer
-	workflow *workflow.Engine
-	store    dataStore
-	audit    *audit.Logger
-	policy   PolicyEngine
+	workflow    *workflow.Engine
+	store       dataStore
+	audit       *audit.Logger
+	policy      PolicyEngine
+	adminEmails []string // additional admin emails beyond "jitsudo-admins" group
 }
 
 // NewHandler wires together the service dependencies.
-func NewHandler(w *workflow.Engine, s *store.Store, a *audit.Logger, p *policy.Engine) *Handler {
-	return &Handler{workflow: w, store: s, audit: a, policy: p}
+// adminEmails lists email addresses granted admin access regardless of group membership.
+func NewHandler(w *workflow.Engine, s *store.Store, a *audit.Logger, p *policy.Engine, adminEmails []string) *Handler {
+	return &Handler{workflow: w, store: s, audit: a, policy: p, adminEmails: adminEmails}
 }
 
 // ── Elevation Request RPCs ────────────────────────────────────────────────────
@@ -313,8 +327,10 @@ func requestToProto(r *store.RequestRow) *jitsudov1alpha1.ElevationRequest {
 		Reason:            r.Reason,
 		BreakGlass:        r.BreakGlass,
 		Metadata:          r.Metadata,
+		ApproverTier:      r.ApproverTier,
 		ApproverIdentity:  r.ApproverIdentity,
 		ApproverComment:   r.ApproverComment,
+		AiReasoningJson:   r.AIReasoningJSON,
 		CreatedAt:         timestamppb.New(r.CreatedAt),
 		UpdatedAt:         timestamppb.New(r.UpdatedAt),
 	}
@@ -418,4 +434,52 @@ func storeErr(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	return status.Errorf(codes.Internal, "%v", err)
+}
+
+// ── Principal Trust Tier RPCs ─────────────────────────────────────────────────
+
+// SetPrincipalTrustTier assigns a trust tier to a principal. Admin-only.
+func (h *Handler) SetPrincipalTrustTier(ctx context.Context, in *jitsudov1alpha1.SetPrincipalTrustTierInput) (*jitsudov1alpha1.SetPrincipalTrustTierResponse, error) {
+	identity := auth.FromContext(ctx)
+	if identity == nil {
+		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	if !h.isAdmin(identity) {
+		return nil, status.Error(codes.PermissionDenied, "requires jitsudo-admins group membership")
+	}
+	if in.GetIdentity() == "" {
+		return nil, status.Error(codes.InvalidArgument, "identity is required")
+	}
+	tier := int(in.GetTrustTier())
+	if tier < 0 || tier > 4 {
+		return nil, status.Errorf(codes.InvalidArgument, "trust_tier must be 0–4, got %d", tier)
+	}
+	p, err := h.store.SetPrincipalTrustTier(ctx, in.GetIdentity(), tier, identity.Email)
+	if err != nil {
+		return nil, storeErr(err)
+	}
+	return &jitsudov1alpha1.SetPrincipalTrustTierResponse{Principal: principalToProto(p)}, nil
+}
+
+// GetPrincipal returns the enrollment record for a principal.
+func (h *Handler) GetPrincipal(ctx context.Context, in *jitsudov1alpha1.GetPrincipalInput) (*jitsudov1alpha1.GetPrincipalResponse, error) {
+	if auth.FromContext(ctx) == nil {
+		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	p, err := h.store.GetPrincipal(ctx, in.GetIdentity())
+	if err != nil {
+		return nil, storeErr(err)
+	}
+	return &jitsudov1alpha1.GetPrincipalResponse{Principal: principalToProto(p)}, nil
+}
+
+func principalToProto(p *store.PrincipalRow) *jitsudov1alpha1.Principal {
+	return &jitsudov1alpha1.Principal{
+		Identity:   p.Identity,
+		TrustTier:  int32(p.TrustTier),
+		EnrolledBy: p.EnrolledBy,
+		EnrolledAt: timestamppb.New(p.EnrolledAt),
+		LastSeenAt: timestamppb.New(p.LastSeenAt),
+		Notes:      p.Notes,
+	}
 }

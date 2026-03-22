@@ -63,6 +63,12 @@ message ElevationRequest {
 
   // Timestamp when the active elevation expires (populated after ACTIVE).
   google.protobuf.Timestamp expires_at = 15;
+
+  // Approval tier routing: "auto" | "ai_review" | "human".
+  string approver_tier = 16;
+
+  // AI reasoning JSON: populated by MCP approver for Tier 2 decisions.
+  string ai_reasoning_json = 17;
 }
 
 // Credential is a single environment variable credential key-value pair.

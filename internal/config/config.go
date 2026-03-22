@@ -26,7 +26,21 @@ type FileConfig struct {
 	TLS           TLSCfg           `yaml:"tls"`
 	Providers     ProvidersCfg     `yaml:"providers"`
 	Notifications NotificationsCfg `yaml:"notifications"`
+	MCP           MCPCfg           `yaml:"mcp"`
 	Log           LogCfg           `yaml:"log"`
+}
+
+// MCPCfg holds configuration for the MCP approver endpoint.
+// The endpoint is disabled when Token is empty.
+type MCPCfg struct {
+	// Token is the Bearer token required to authenticate MCP requests.
+	// Leave empty to disable the /mcp endpoint entirely.
+	// Override: JITSUDOD_MCP_TOKEN
+	Token string `yaml:"token"`
+	// AgentIdentity is the name recorded in the audit log for AI decisions.
+	// Defaults to "mcp-agent" if empty.
+	// Override: JITSUDOD_MCP_AGENT_IDENTITY
+	AgentIdentity string `yaml:"agent_identity"`
 }
 
 // ServerCfg holds network listener addresses.
@@ -135,6 +149,8 @@ func applyEnv(cfg *FileConfig) {
 	setIfEnv(&cfg.TLS.KeyFile, "JITSUDOD_TLS_KEY_FILE")
 	setIfEnv(&cfg.TLS.CAFile, "JITSUDOD_TLS_CA_FILE")
 	setIfEnv(&cfg.Log.Level, "JITSUDOD_LOG_LEVEL")
+	setIfEnv(&cfg.MCP.Token, "JITSUDOD_MCP_TOKEN")
+	setIfEnv(&cfg.MCP.AgentIdentity, "JITSUDOD_MCP_AGENT_IDENTITY")
 
 	// Notification env vars allow sensitive values (webhook URLs, passwords)
 	// to come from Kubernetes Secrets without appearing in the config file.

@@ -165,6 +165,62 @@ func TestLoad_MissingFile(t *testing.T) {
 	}
 }
 
+func TestLoad_MCPConfig(t *testing.T) {
+	yaml := `
+mcp:
+  token: "supersecrettoken"
+  agent_identity: "claude-approver-prod"
+`
+	path := writeTemp(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.MCP.Token != "supersecrettoken" {
+		t.Errorf("MCP.Token = %q, want %q", cfg.MCP.Token, "supersecrettoken")
+	}
+	if cfg.MCP.AgentIdentity != "claude-approver-prod" {
+		t.Errorf("MCP.AgentIdentity = %q, want %q", cfg.MCP.AgentIdentity, "claude-approver-prod")
+	}
+}
+
+func TestLoad_MCPToken_EnvVar(t *testing.T) {
+	t.Setenv("JITSUDOD_MCP_TOKEN", "token-from-env")
+	t.Setenv("JITSUDOD_MCP_AGENT_IDENTITY", "agent-from-env")
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.MCP.Token != "token-from-env" {
+		t.Errorf("MCP.Token = %q, want %q", cfg.MCP.Token, "token-from-env")
+	}
+	if cfg.MCP.AgentIdentity != "agent-from-env" {
+		t.Errorf("MCP.AgentIdentity = %q, want %q", cfg.MCP.AgentIdentity, "agent-from-env")
+	}
+}
+
+// TestLoad_MCPToken_EnvOverridesYAML verifies env var wins over YAML value.
+func TestLoad_MCPToken_EnvOverridesYAML(t *testing.T) {
+	yaml := `
+mcp:
+  token: "yaml-token"
+  agent_identity: "yaml-agent"
+`
+	path := writeTemp(t, yaml)
+	t.Setenv("JITSUDOD_MCP_TOKEN", "env-token")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.MCP.Token != "env-token" {
+		t.Errorf("MCP.Token = %q, want %q (env should override YAML)", cfg.MCP.Token, "env-token")
+	}
+	// AgentIdentity not overridden by env — should keep YAML value.
+	if cfg.MCP.AgentIdentity != "yaml-agent" {
+		t.Errorf("MCP.AgentIdentity = %q, want %q", cfg.MCP.AgentIdentity, "yaml-agent")
+	}
+}
+
 // writeTemp writes content to a temp file and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()

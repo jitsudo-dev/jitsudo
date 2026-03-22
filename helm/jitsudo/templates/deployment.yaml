@@ -65,6 +65,18 @@ spec:
               value: {{ .Values.config.notifications.smtp.password | quote }}
             {{- end }}
             {{- end }}
+            {{- if .Values.config.mcp.enabled }}
+            {{- if .Values.config.mcp.existingSecret }}
+            - name: JITSUDOD_MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.mcp.existingSecret }}
+                  key: JITSUDOD_MCP_TOKEN
+            {{- else if .Values.config.mcp.token }}
+            - name: JITSUDOD_MCP_TOKEN
+              value: {{ .Values.config.mcp.token | quote }}
+            {{- end }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ trimPrefix ":" .Values.config.server.httpAddr | int }}

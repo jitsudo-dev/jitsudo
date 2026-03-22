@@ -276,6 +276,76 @@
         ]
       }
     },
+    "/api/v1alpha1/principals/{identity}": {
+      "get": {
+        "summary": "GetPrincipal returns the enrollment record for a principal.",
+        "operationId": "JitsudoService_GetPrincipal",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1GetPrincipalResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
+    "/api/v1alpha1/principals/{identity}/trust-tier": {
+      "put": {
+        "summary": "SetPrincipalTrustTier assigns a trust tier (0–4) to a principal.\nAdmin-only: caller must be in the \"jitsudo-admins\" group.",
+        "operationId": "JitsudoService_SetPrincipalTrustTier",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1alpha1SetPrincipalTrustTierResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/JitsudoServiceSetPrincipalTrustTierBody"
+            }
+          }
+        ],
+        "tags": [
+          "JitsudoService"
+        ]
+      }
+    },
     "/api/v1alpha1/requests": {
       "get": {
         "summary": "ListRequests returns a filtered list of elevation requests.",
@@ -579,6 +649,19 @@
       },
       "description": "RevokeRequestInput carries an optional reason for early revocation."
     },
+    "JitsudoServiceSetPrincipalTrustTierBody": {
+      "type": "object",
+      "properties": {
+        "trustTier": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "description": "SetPrincipalTrustTierInput is the request body for admin tier assignment."
+    },
     "protobufAny": {
       "type": "object",
       "properties": {
@@ -856,6 +939,14 @@
           "type": "string",
           "format": "date-time",
           "description": "Timestamp when the active elevation expires (populated after ACTIVE)."
+        },
+        "approverTier": {
+          "type": "string",
+          "description": "Approval tier routing: \"auto\" | \"ai_review\" | \"human\"."
+        },
+        "aiReasoningJson": {
+          "type": "string",
+          "description": "AI reasoning JSON: populated by MCP approver for Tier 2 decisions."
         }
       },
       "description": "ElevationRequest represents a request for temporary elevated cloud access."
@@ -908,6 +999,15 @@
         }
       },
       "description": "GetPolicyResponse wraps a single policy."
+    },
+    "v1alpha1GetPrincipalResponse": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "$ref": "#/definitions/v1alpha1Principal"
+        }
+      },
+      "description": "GetPrincipalResponse wraps the principal record."
     },
     "v1alpha1GetRequestResponse": {
       "type": "object",
@@ -996,6 +1096,39 @@
       "default": "POLICY_TYPE_UNSPECIFIED",
       "description": "PolicyType distinguishes eligibility policies from approval policies."
     },
+    "v1alpha1Principal": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string",
+          "description": "Identity is the IdP email / subject that uniquely identifies this principal."
+        },
+        "trustTier": {
+          "type": "integer",
+          "format": "int32",
+          "description": "TrustTier is the admin-assigned trust level (0–4).\n0 = unknown/unverified, 4 = highest trust / break-glass eligible."
+        },
+        "enrolledBy": {
+          "type": "string",
+          "description": "EnrolledBy is the admin identity that last set the trust tier."
+        },
+        "enrolledAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "EnrolledAt is when the trust tier was last set."
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "LastSeenAt is the last time this principal made an authenticated request."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Notes is an optional free-text field for the enrolling admin."
+        }
+      },
+      "description": "Principal holds the enrollment record for a known identity."
+    },
     "v1alpha1QueryAuditResponse": {
       "type": "object",
       "properties": {
@@ -1045,6 +1178,15 @@
         }
       },
       "description": "RevokeRequestResponse wraps the updated request after revocation."
+    },
+    "v1alpha1SetPrincipalTrustTierResponse": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "$ref": "#/definitions/v1alpha1Principal"
+        }
+      },
+      "description": "SetPrincipalTrustTierResponse wraps the updated principal record."
     }
   }
 }

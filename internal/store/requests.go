@@ -33,11 +33,13 @@ type RequestRow struct {
 	Reason            string
 	BreakGlass        bool
 	Metadata          map[string]string
+	ApproverTier      string // "auto" | "ai_review" | "human"
 	ApproverIdentity  string
 	ApproverComment   string
 	ExpiresAt         *time.Time
 	RevokeToken       string
 	CredentialsJSON   map[string]string // nil until ACTIVE
+	AIReasoningJSON   string            // populated by MCP approver for Tier 2 decisions
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -49,6 +51,7 @@ type RequestUpdate struct {
 	ExpiresAt        *time.Time
 	RevokeToken      string
 	CredentialsJSON  map[string]string
+	AIReasoningJSON  string
 }
 
 // ListFilter selects which requests to return.
@@ -61,14 +64,18 @@ type ListFilter struct {
 // CreateRequest inserts a new PENDING request.
 func (s *Store) CreateRequest(ctx context.Context, req *RequestRow) error {
 	metaJSON, _ := json.Marshal(req.Metadata)
+	tier := req.ApproverTier
+	if tier == "" {
+		tier = "human"
+	}
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO elevation_requests
 			(id, state, requester_identity, provider, role, resource_scope,
-			 duration_seconds, reason, break_glass, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+			 duration_seconds, reason, break_glass, metadata, approver_tier, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		req.ID, string(req.State), req.RequesterIdentity, req.Provider,
 		req.Role, req.ResourceScope, req.DurationSeconds, req.Reason,
-		req.BreakGlass, metaJSON, req.CreatedAt, req.UpdatedAt,
+		req.BreakGlass, metaJSON, tier, req.CreatedAt, req.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("store: CreateRequest: %w", err)
@@ -81,9 +88,10 @@ func (s *Store) GetRequest(ctx context.Context, id string) (*RequestRow, error) 
 	row := s.db.QueryRow(ctx, `
 		SELECT id, state, requester_identity, provider, role, resource_scope,
 		       duration_seconds, reason, break_glass, metadata,
+		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       created_at, updated_at
+		       COALESCE(ai_reasoning_json,''), created_at, updated_at
 		FROM elevation_requests WHERE id = $1`, id)
 	return scanRequest(row)
 }
@@ -93,9 +101,10 @@ func (s *Store) ListRequests(ctx context.Context, f ListFilter) ([]*RequestRow, 
 	query := `
 		SELECT id, state, requester_identity, provider, role, resource_scope,
 		       duration_seconds, reason, break_glass, metadata,
+		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       created_at, updated_at
+		       COALESCE(ai_reasoning_json,''), created_at, updated_at
 		FROM elevation_requests WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -132,15 +141,60 @@ func (s *Store) ListRequests(ctx context.Context, f ListFilter) ([]*RequestRow, 
 	return out, rows.Err()
 }
 
+// SetApproverTier updates the approver_tier column without changing state.
+// Used by the MCP escalate tool to flip a Tier 2 request to human review.
+func (s *Store) SetApproverTier(ctx context.Context, id string, tier string) error {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE elevation_requests SET approver_tier = $2, updated_at = NOW()
+		WHERE id = $1 AND state = 'PENDING'`, id, tier)
+	if err != nil {
+		return fmt.Errorf("store: SetApproverTier: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListPendingAIReview returns PENDING requests with approver_tier = 'ai_review'.
+// Used by the MCP approver interface to surface work for the AI agent.
+func (s *Store) ListPendingAIReview(ctx context.Context) ([]*RequestRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, state, requester_identity, provider, role, resource_scope,
+		       duration_seconds, reason, break_glass, metadata,
+		       COALESCE(approver_tier,'human'),
+		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
+		       expires_at, COALESCE(revoke_token,''), credentials_json,
+		       COALESCE(ai_reasoning_json,''), created_at, updated_at
+		FROM elevation_requests
+		WHERE state = 'PENDING' AND approver_tier = 'ai_review'
+		ORDER BY created_at ASC LIMIT 100`)
+	if err != nil {
+		return nil, fmt.Errorf("store: ListPendingAIReview: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*RequestRow
+	for rows.Next() {
+		r, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // ListActiveExpired returns ACTIVE requests whose expires_at is in the past.
 // Used by the expiry sweeper.
 func (s *Store) ListActiveExpired(ctx context.Context) ([]*RequestRow, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, state, requester_identity, provider, role, resource_scope,
 		       duration_seconds, reason, break_glass, metadata,
+		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       created_at, updated_at
+		       COALESCE(ai_reasoning_json,''), created_at, updated_at
 		FROM elevation_requests
 		WHERE state = 'ACTIVE' AND expires_at <= NOW()`)
 	if err != nil {
@@ -193,18 +247,20 @@ func (s *Store) TransitionRequest(ctx context.Context, id string, fromState, toS
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE elevation_requests SET
-			state             = $2,
-			approver_identity = COALESCE(NULLIF($3,''), approver_identity),
-			approver_comment  = COALESCE(NULLIF($4,''), approver_comment),
-			expires_at        = COALESCE($5, expires_at),
-			revoke_token      = COALESCE(NULLIF($6,''), revoke_token),
-			credentials_json  = COALESCE($7::jsonb, credentials_json),
-			updated_at        = $8
+			state               = $2,
+			approver_identity   = COALESCE(NULLIF($3,''), approver_identity),
+			approver_comment    = COALESCE(NULLIF($4,''), approver_comment),
+			expires_at          = COALESCE($5, expires_at),
+			revoke_token        = COALESCE(NULLIF($6,''), revoke_token),
+			credentials_json    = COALESCE($7::jsonb, credentials_json),
+			ai_reasoning_json   = COALESCE(NULLIF($9,''), ai_reasoning_json),
+			updated_at          = $8
 		WHERE id = $1`,
 		id, string(toState),
 		u.ApproverIdentity, u.ApproverComment,
 		u.ExpiresAt, u.RevokeToken,
 		nullableJSON(credJSON), now,
+		u.AIReasoningJSON,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: TransitionRequest update: %w", err)
@@ -236,8 +292,10 @@ func scanRequest(row interface {
 		&r.ID, &r.State, &r.RequesterIdentity, &r.Provider,
 		&r.Role, &r.ResourceScope, &r.DurationSeconds, &r.Reason,
 		&r.BreakGlass, &metaJSON,
+		&r.ApproverTier,
 		&r.ApproverIdentity, &r.ApproverComment,
 		&r.ExpiresAt, &r.RevokeToken, &credJSON,
+		&r.AIReasoningJSON,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
