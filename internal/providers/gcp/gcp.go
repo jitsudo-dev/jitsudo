@@ -87,14 +87,8 @@ func (p *Provider) Name() string {
 
 // ValidateRequest validates that the request is well-formed for GCP.
 func (p *Provider) ValidateRequest(_ context.Context, req providers.ElevationRequest) error {
-	if req.RequestID == "" {
-		return fmt.Errorf("gcp: RequestID must not be empty")
-	}
-	if req.UserIdentity == "" {
-		return fmt.Errorf("gcp: UserIdentity must not be empty")
-	}
-	if req.Duration <= 0 {
-		return fmt.Errorf("gcp: Duration must be positive")
+	if err := providers.ValidateCommon(req); err != nil {
+		return err
 	}
 	if req.ResourceScope == "" {
 		return fmt.Errorf("gcp: ResourceScope (GCP project ID) must not be empty")

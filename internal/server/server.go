@@ -252,7 +252,9 @@ func (s *Server) Start(ctx context.Context) error {
 	case <-ctx.Done():
 		log.Info().Msg("jitsudod shutting down")
 		s.grpcServer.GracefulStop()
-		return s.httpServer.Shutdown(context.Background())
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		return s.httpServer.Shutdown(shutdownCtx)
 	case err := <-grpcErrC:
 		return err
 	case err := <-httpErrC:

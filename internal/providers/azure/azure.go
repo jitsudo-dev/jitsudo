@@ -111,14 +111,8 @@ func (p *Provider) Name() string {
 
 // ValidateRequest validates that the request is well-formed for Azure.
 func (p *Provider) ValidateRequest(_ context.Context, req providers.ElevationRequest) error {
-	if req.RequestID == "" {
-		return fmt.Errorf("azure: RequestID must not be empty")
-	}
-	if req.UserIdentity == "" {
-		return fmt.Errorf("azure: UserIdentity must not be empty")
-	}
-	if req.Duration <= 0 {
-		return fmt.Errorf("azure: Duration must be positive")
+	if err := providers.ValidateCommon(req); err != nil {
+		return err
 	}
 	if req.ResourceScope == "" {
 		return fmt.Errorf("azure: ResourceScope (subscription or resource group) must not be empty")

@@ -83,14 +83,8 @@ func (p *Provider) Name() string {
 
 // ValidateRequest validates that the request is well-formed for Kubernetes.
 func (p *Provider) ValidateRequest(_ context.Context, req providers.ElevationRequest) error {
-	if req.RequestID == "" {
-		return fmt.Errorf("kubernetes: RequestID must not be empty")
-	}
-	if req.UserIdentity == "" {
-		return fmt.Errorf("kubernetes: UserIdentity must not be empty")
-	}
-	if req.Duration <= 0 {
-		return fmt.Errorf("kubernetes: Duration must be positive")
+	if err := providers.ValidateCommon(req); err != nil {
+		return err
 	}
 	if req.RoleName == "" {
 		return fmt.Errorf("kubernetes: RoleName must not be empty")

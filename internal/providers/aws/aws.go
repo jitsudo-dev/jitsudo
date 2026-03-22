@@ -108,14 +108,8 @@ func (p *Provider) Name() string {
 
 // ValidateRequest validates that the request is well-formed for AWS.
 func (p *Provider) ValidateRequest(_ context.Context, req providers.ElevationRequest) error {
-	if req.RequestID == "" {
-		return fmt.Errorf("aws: RequestID must not be empty")
-	}
-	if req.UserIdentity == "" {
-		return fmt.Errorf("aws: UserIdentity must not be empty")
-	}
-	if req.Duration <= 0 {
-		return fmt.Errorf("aws: Duration must be positive")
+	if err := providers.ValidateCommon(req); err != nil {
+		return err
 	}
 	if req.ResourceScope == "" {
 		return fmt.Errorf("aws: ResourceScope (AWS account ID) must not be empty")

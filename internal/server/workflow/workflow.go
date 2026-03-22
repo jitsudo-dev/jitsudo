@@ -61,6 +61,14 @@ func NewEngine(s engineStore, a auditAppender, p *policy.Engine, r *providers.Re
 	return &Engine{store: s, audit: a, policy: p, registry: r, notifications: n}
 }
 
+// appendAudit writes an audit entry and logs a warning if it fails.
+// Audit failures are non-fatal but must be observable for compliance monitoring.
+func (e *Engine) appendAudit(ctx context.Context, entry audit.Entry) {
+	if err := e.audit.Append(ctx, entry); err != nil {
+		log.Warn().Err(err).Str("request_id", entry.RequestID).Msg("audit: append failed")
+	}
+}
+
 // CreateRequest validates, checks eligibility, and creates a PENDING request.
 // If input.BreakGlass is true, the policy eligibility check is skipped and
 // the grant is issued immediately — the full PENDING→APPROVED→ACTIVE trail is
@@ -132,7 +140,7 @@ func (e *Engine) CreateRequest(ctx context.Context, identity *auth.Identity, inp
 		return nil, fmt.Errorf("workflow: create request: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: identity.Email,
 		Action:        audit.ActionRequestCreated,
 		RequestID:     req.ID,
@@ -182,7 +190,7 @@ func (e *Engine) createBreakGlass(ctx context.Context, identity *auth.Identity, 
 		return nil, fmt.Errorf("workflow: break-glass create request: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: identity.Email,
 		Action:        audit.ActionRequestCreated,
 		RequestID:     req.ID,
@@ -215,7 +223,7 @@ func (e *Engine) createBreakGlass(ctx context.Context, identity *auth.Identity, 
 		return nil, fmt.Errorf("workflow: break-glass approve transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: identity.Email,
 		Action:        audit.ActionRequestApproved,
 		RequestID:     req.ID,
@@ -254,7 +262,7 @@ func (e *Engine) createBreakGlass(ctx context.Context, identity *auth.Identity, 
 		return nil, fmt.Errorf("workflow: break-glass active transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: identity.Email,
 		Action:        audit.ActionGrantIssued,
 		RequestID:     req.ID,
@@ -294,7 +302,7 @@ func (e *Engine) autoApproveRequest(ctx context.Context, identity *auth.Identity
 		return nil, fmt.Errorf("workflow: auto-approve transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: identity.Email,
 		Action:        audit.ActionRequestAutoApproved,
 		RequestID:     req.ID,
@@ -332,7 +340,7 @@ func (e *Engine) autoApproveRequest(ctx context.Context, identity *auth.Identity
 		return nil, fmt.Errorf("workflow: auto-approve active transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: identity.Email,
 		Action:        audit.ActionGrantIssued,
 		RequestID:     req.ID,
@@ -370,7 +378,7 @@ func (e *Engine) AIApproveRequest(ctx context.Context, requestID, agentIdentity,
 		return nil, fmt.Errorf("workflow: AI approve transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: agentIdentity,
 		Action:        audit.ActionRequestAIApproved,
 		RequestID:     requestID,
@@ -411,7 +419,7 @@ func (e *Engine) AIApproveRequest(ctx context.Context, requestID, agentIdentity,
 		return nil, fmt.Errorf("workflow: AI approve active transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: agentIdentity,
 		Action:        audit.ActionGrantIssued,
 		RequestID:     req.ID,
@@ -448,7 +456,7 @@ func (e *Engine) AIDenyRequest(ctx context.Context, requestID, agentIdentity, re
 		return nil, fmt.Errorf("workflow: AI deny transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: agentIdentity,
 		Action:        audit.ActionRequestAIDenied,
 		RequestID:     requestID,
@@ -485,7 +493,7 @@ func (e *Engine) AIEscalateRequest(ctx context.Context, requestID, agentIdentity
 		return nil, fmt.Errorf("workflow: AI escalate get request: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: agentIdentity,
 		Action:        audit.ActionRequestAIEscalated,
 		RequestID:     requestID,
@@ -526,18 +534,22 @@ func (e *Engine) ApproveRequest(ctx context.Context, approver *auth.Identity, re
 	allowed, reason, err := e.policy.EvalApproval(ctx, approver, req)
 	if err != nil {
 		// Roll back to PENDING on policy eval error.
-		_, _ = e.store.TransitionRequest(ctx, requestID, store.StateApproved, store.StatePending, store.RequestUpdate{})
+		if _, rbErr := e.store.TransitionRequest(ctx, requestID, store.StateApproved, store.StatePending, store.RequestUpdate{}); rbErr != nil {
+			log.Error().Err(rbErr).Str("request_id", requestID).Msg("workflow: rollback to PENDING failed after policy eval error")
+		}
 		return nil, fmt.Errorf("workflow: approval eval: %w", err)
 	}
 	if !allowed {
 		if reason == "" {
 			reason = "approval policy denied"
 		}
-		_, _ = e.store.TransitionRequest(ctx, requestID, store.StateApproved, store.StatePending, store.RequestUpdate{})
+		if _, rbErr := e.store.TransitionRequest(ctx, requestID, store.StateApproved, store.StatePending, store.RequestUpdate{}); rbErr != nil {
+			log.Error().Err(rbErr).Str("request_id", requestID).Msg("workflow: rollback to PENDING failed after policy denial")
+		}
 		return nil, fmt.Errorf("workflow: approval denied: %s", reason)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: approver.Email,
 		Action:        audit.ActionRequestApproved,
 		RequestID:     requestID,
@@ -557,6 +569,9 @@ func (e *Engine) ApproveRequest(ctx context.Context, approver *auth.Identity, re
 		Reason:        req.Reason,
 	}
 	p := e.registry.Get(req.Provider)
+	if p == nil {
+		return nil, fmt.Errorf("workflow: provider %q not registered", req.Provider)
+	}
 	grant, err := p.Grant(ctx, provReq)
 	if err != nil {
 		return nil, fmt.Errorf("workflow: provider grant: %w", err)
@@ -575,7 +590,7 @@ func (e *Engine) ApproveRequest(ctx context.Context, approver *auth.Identity, re
 		return nil, fmt.Errorf("workflow: active transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: approver.Email,
 		Action:        audit.ActionGrantIssued,
 		RequestID:     requestID,
@@ -610,7 +625,7 @@ func (e *Engine) DenyRequest(ctx context.Context, denier *auth.Identity, request
 		return nil, fmt.Errorf("workflow: deny transition: %w", err)
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: denier.Email,
 		Action:        audit.ActionRequestDenied,
 		RequestID:     requestID,
@@ -683,7 +698,7 @@ func (e *Engine) RevokeRequest(ctx context.Context, actor *auth.Identity, reques
 		}
 	}
 
-	_ = e.audit.Append(ctx, audit.Entry{
+	e.appendAudit(ctx, audit.Entry{
 		ActorIdentity: actor.Email,
 		Action:        audit.ActionGrantRevoked,
 		RequestID:     requestID,
@@ -770,7 +785,7 @@ func (e *Engine) sweepExpired(ctx context.Context) {
 			continue
 		}
 
-		_ = e.audit.Append(ctx, audit.Entry{
+		e.appendAudit(ctx, audit.Entry{
 			ActorIdentity: "system",
 			Action:        audit.ActionGrantExpired,
 			RequestID:     req.ID,

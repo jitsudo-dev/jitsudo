@@ -243,7 +243,11 @@ func (s *Store) TransitionRequest(ctx context.Context, id string, fromState, toS
 	now := time.Now().UTC()
 	var credJSON []byte
 	if u.CredentialsJSON != nil {
-		credJSON, _ = json.Marshal(u.CredentialsJSON)
+		var merr error
+		credJSON, merr = json.Marshal(u.CredentialsJSON)
+		if merr != nil {
+			return nil, fmt.Errorf("store: marshal credentials: %w", merr)
+		}
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE elevation_requests SET
@@ -278,7 +282,7 @@ func nullableJSON(b []byte) interface{} {
 	if len(b) == 0 {
 		return nil
 	}
-	return string(b)
+	return b
 }
 
 // scanRequest scans a single row from any query returning the standard request columns.
@@ -305,10 +309,14 @@ func scanRequest(row interface {
 		return nil, fmt.Errorf("store: scan request: %w", err)
 	}
 	if len(metaJSON) > 0 {
-		_ = json.Unmarshal(metaJSON, &r.Metadata)
+		if err := json.Unmarshal(metaJSON, &r.Metadata); err != nil {
+			return nil, fmt.Errorf("store: unmarshal request metadata: %w", err)
+		}
 	}
 	if len(credJSON) > 0 {
-		_ = json.Unmarshal(credJSON, &r.CredentialsJSON)
+		if err := json.Unmarshal(credJSON, &r.CredentialsJSON); err != nil {
+			return nil, fmt.Errorf("store: unmarshal request credentials: %w", err)
+		}
 	}
 	return r, nil
 }

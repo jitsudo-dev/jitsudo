@@ -52,9 +52,14 @@ func (s *Store) AppendAuditEvent(ctx context.Context, e *AuditEventRow) (*AuditE
 			return nil, err
 		}
 		// Brief backoff before retry (10 ms, 20 ms, 30 ms, 40 ms).
-		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+		select {
+		case <-time.After(time.Duration(attempt+1) * 10 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	panic("unreachable")
+	// All attempts exhausted — return the last error (loop exits via return above).
+	return nil, fmt.Errorf("store: AppendAuditEvent: max retries exceeded")
 }
 
 // appendAuditEventOnce performs a single serializable append attempt.

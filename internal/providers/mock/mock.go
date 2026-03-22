@@ -7,7 +7,6 @@ package mock
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -34,16 +33,7 @@ func (p *Provider) Name() string {
 
 // ValidateRequest performs basic validation without any external calls.
 func (p *Provider) ValidateRequest(_ context.Context, req providers.ElevationRequest) error {
-	if req.RequestID == "" {
-		return fmt.Errorf("mock: RequestID must not be empty")
-	}
-	if req.UserIdentity == "" {
-		return fmt.Errorf("mock: UserIdentity must not be empty")
-	}
-	if req.Duration <= 0 {
-		return fmt.Errorf("mock: Duration must be positive, got %v", req.Duration)
-	}
-	return nil
+	return providers.ValidateCommon(req)
 }
 
 // Grant creates an in-memory grant. Idempotent: returns existing grant if already issued.
