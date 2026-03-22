@@ -86,6 +86,7 @@ type NotificationsConfig struct {
 	Slack    *notifications.SlackConfig     `yaml:"slack"`
 	SMTP     *notifications.SMTPConfig      `yaml:"smtp"`
 	Webhooks []*notifications.WebhookConfig `yaml:"webhooks"`
+	SIEM     *notifications.SIEMConfig      `yaml:"siem"`
 }
 
 // ProvidersConfig holds optional cloud provider configurations.
@@ -140,6 +141,14 @@ func (s *Server) Start(ctx context.Context) error {
 	for _, cfg := range s.cfg.Notifications.Webhooks {
 		if cfg != nil && cfg.URL != "" {
 			notifiers = append(notifiers, notifications.NewWebhookNotifier(*cfg))
+		}
+	}
+	if siem := s.cfg.Notifications.SIEM; siem != nil {
+		if cfg := siem.JSON; cfg != nil && cfg.URL != "" {
+			notifiers = append(notifiers, notifications.NewSIEMJSONNotifier(*cfg))
+		}
+		if cfg := siem.Syslog; cfg != nil {
+			notifiers = append(notifiers, notifications.NewSIEMSyslogNotifier(*cfg))
 		}
 	}
 	dispatcher := notifications.NewDispatcher(notifiers...)

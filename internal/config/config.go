@@ -84,6 +84,7 @@ type NotificationsCfg struct {
 	Slack    *notifications.SlackConfig     `yaml:"slack"`
 	SMTP     *notifications.SMTPConfig      `yaml:"smtp"`
 	Webhooks []*notifications.WebhookConfig `yaml:"webhooks"`
+	SIEM     *notifications.SIEMConfig      `yaml:"siem"`
 }
 
 // LogCfg controls log level and output format.
@@ -177,6 +178,24 @@ func applyEnv(cfg *FileConfig) {
 	// are configured. Useful for simple Docker / Kubernetes Secret deployments.
 	if v := os.Getenv("JITSUDOD_WEBHOOK_URL"); v != "" && len(cfg.Notifications.Webhooks) == 0 {
 		cfg.Notifications.Webhooks = []*notifications.WebhookConfig{{URL: v}}
+	}
+	if v := os.Getenv("JITSUDOD_SIEM_JSON_URL"); v != "" {
+		if cfg.Notifications.SIEM == nil {
+			cfg.Notifications.SIEM = &notifications.SIEMConfig{}
+		}
+		if cfg.Notifications.SIEM.JSON == nil {
+			cfg.Notifications.SIEM.JSON = &notifications.SIEMJSONConfig{}
+		}
+		cfg.Notifications.SIEM.JSON.URL = v
+	}
+	if v := os.Getenv("JITSUDOD_SIEM_SYSLOG_ADDRESS"); v != "" {
+		if cfg.Notifications.SIEM == nil {
+			cfg.Notifications.SIEM = &notifications.SIEMConfig{}
+		}
+		if cfg.Notifications.SIEM.Syslog == nil {
+			cfg.Notifications.SIEM.Syslog = &notifications.SIEMSyslogConfig{}
+		}
+		cfg.Notifications.SIEM.Syslog.Address = v
 	}
 }
 

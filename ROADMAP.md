@@ -62,7 +62,7 @@ Goal: Implement the three-tier approval model and the architectural decisions ca
 - [x] Trust tier system for principals (Tier 0–4, principal enrollment, `input.trust_tier` policy input)
 - [x] AI approver audit trail (model reasoning captured per Tier 2 decision)
 - [x] Generic webhook notification
-- [ ] SIEM integration (basic JSON streaming + syslog forwarding)
+- [x] SIEM integration (basic JSON streaming + syslog forwarding)
 - [ ] Multi-instance HA deployment (HPA, PodDisruptionBudget, PostgreSQL replication)
 
 ## Milestone 5: Ecosystem

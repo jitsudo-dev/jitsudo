@@ -25,12 +25,16 @@ test:
 	go test ./... -short -race -count=1
 
 ## test-integration: Run integration tests (requires Docker)
+# -p 1 runs packages sequentially. Integration tests share a single PostgreSQL
+# instance, so parallel package execution causes cross-package audit log
+# interference (the global hash chain is written by multiple packages at once).
 test-integration:
-	go test ./... -tags integration -race -count=1
+	go test -p 1 ./... -tags integration -race -count=1
 
 ## test-e2e: Run end-to-end tests (requires live cloud credentials)
+# -p 1 for the same reason as test-integration: shared external state.
 test-e2e:
-	go test ./... -tags e2e -race -count=1
+	go test -p 1 ./... -tags e2e -race -count=1
 
 ## lint: Run golangci-lint
 lint:

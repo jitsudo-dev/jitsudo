@@ -86,7 +86,7 @@ jitsudo CLI  ──gRPC/REST──>  jitsudod Control Plane
                                │     AWS / Azure / GCP / Kubernetes
                                ├── Audit Log (append-only, hash chain)
                                ├── Notification Dispatcher
-                               │     Slack / email
+                               │     Slack / email / webhook / SIEM
                                └── MCP Approver Interface (POST /mcp)
                                      Tier 2 AI agent connect here
 ```

@@ -185,6 +185,44 @@ notifications:
     - url: "https://other.example.com/hook"
       events: ["break_glass", "approved"]
 
+  # SIEM integration — forward access events to a security information and
+  # event management system for centralized audit and alerting.
+  siem:
+
+    # JSON streaming — POST individual events as JSON to an HTTP ingest endpoint.
+    # Richer than the generic webhook: includes source, schema_version, and a
+    # per-event UUID (event_id) for deduplication.
+    # Compatible with Splunk HEC, Elasticsearch, Datadog Logs, and any
+    # generic HTTP ingest endpoint.
+    # Override URL: JITSUDOD_SIEM_JSON_URL
+    json:
+      url: "https://siem.example.com/api/v1/ingest"
+
+      # events filters which event types are forwarded. Empty = all events.
+      events: []
+
+      # headers adds arbitrary HTTP headers to every request.
+      headers:
+        Authorization: "Bearer <token>"
+
+    # Syslog forwarding — send structured key=value messages via the syslog
+    # protocol. Messages are parseable by any SIEM that consumes syslog.
+    # Severity mapping: break_glass → WARNING, denied/ai_denied → NOTICE, others → INFO.
+    # Override address: JITSUDOD_SIEM_SYSLOG_ADDRESS
+    syslog:
+      # network: "tcp", "udp", or "" to use the local Unix socket.
+      network: "tcp"
+
+      # address: "host:port" for a remote syslog server.
+      # Leave empty when network is "" to use the OS default local socket.
+      address: "syslog.example.com:514"
+
+      # tag is the syslog process identifier. Defaults to "jitsudo".
+      tag: "jitsudo"
+
+      # facility: "auth" (default), "daemon", or "local0"–"local7".
+      facility: "auth"
+
 # ── MCP Approver Interface ────────────────────────────────────────────────────
 # The MCP endpoint (POST /mcp) lets AI agents evaluate and decide on pending
 # Tier 2 elevation requests. It is disabled when token is empty.

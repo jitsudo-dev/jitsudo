@@ -77,6 +77,7 @@ func main() {
 			Slack:    cfg.Notifications.Slack,
 			SMTP:     cfg.Notifications.SMTP,
 			Webhooks: cfg.Notifications.Webhooks,
+			SIEM:     cfg.Notifications.SIEM,
 		},
 		MCPToken:         cfg.MCP.Token,
 		MCPAgentIdentity: cfg.MCP.AgentIdentity,
