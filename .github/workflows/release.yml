@@ -65,6 +65,48 @@ jobs:
             --generate-notes \
             dist/*
 
+  homebrew-tap:
+    name: Update Homebrew Tap
+    runs-on: ubuntu-latest
+    needs: release
+    # Requires a fine-grained PAT with Contents:write on jitsudo-dev/homebrew-tap
+    # stored as the HOMEBREW_TAP_TOKEN secret in this repository.
+
+    steps:
+      - name: Update formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          # checksums.txt is a public release asset — no auth required
+          curl -fsSL \
+            "https://github.com/jitsudo-dev/jitsudo/releases/download/${VERSION}/checksums.txt" \
+            -o checksums.txt
+
+          # sha256sum format: "<hash>  <filename>"
+          export DARWIN_AMD64=$(awk '/jitsudo-darwin-amd64[[:space:]]/{print $1}' checksums.txt)
+          export DARWIN_ARM64=$(awk '/jitsudo-darwin-arm64[[:space:]]/{print $1}' checksums.txt)
+          export LINUX_AMD64=$(awk '/jitsudo-linux-amd64[[:space:]]/{print $1}' checksums.txt)
+          export LINUX_ARM64=$(awk '/jitsudo-linux-arm64[[:space:]]/{print $1}' checksums.txt)
+          export VERSION_NUM="${VERSION#v}"
+
+          git clone \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/jitsudo-dev/homebrew-tap.git" \
+            tap
+          cd tap
+
+          # Render Formula/jitsudo.rb from the committed template.
+          # envsubst is restricted to only the named variables so that Ruby's
+          # #{...} interpolation (and any other ${...} in the template) is untouched.
+          envsubst '$VERSION $VERSION_NUM $DARWIN_AMD64 $DARWIN_ARM64 $LINUX_AMD64 $LINUX_ARM64' \
+            < Formula/jitsudo.rb.tmpl > Formula/jitsudo.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/jitsudo.rb
+          git commit -m "chore: update jitsudo to ${VERSION}"
+          git push
+
   images:
     name: Container Images
     runs-on: ubuntu-latest
