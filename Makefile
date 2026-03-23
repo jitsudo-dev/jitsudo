@@ -31,10 +31,13 @@ test:
 test-integration:
 	go test -p 1 ./... -tags integration -race -count=1
 
-## test-e2e: Run end-to-end tests (requires live cloud credentials)
+## test-e2e: Run end-to-end tests (requires live cloud credentials — set E2E_ENABLED=true)
 # -p 1 for the same reason as test-integration: shared external state.
 test-e2e:
-	go test -p 1 ./... -tags e2e -race -count=1
+	@if [ -z "$(E2E_ENABLED)" ]; then \
+	  echo "Set E2E_ENABLED=true to run E2E tests (see test/e2e/README.md)"; exit 1; \
+	fi
+	go test -p 1 ./test/e2e/... -tags e2e -v -race -count=1 -timeout 30m
 
 ## lint: Run golangci-lint
 lint:

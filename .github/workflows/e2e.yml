@@ -1,0 +1,92 @@
+# Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+# SPDX-License-Identifier: Apache-2.0
+#
+# E2E test workflow — manually triggered only.
+# Reads cloud credentials from GitHub Actions Secrets and runs the full
+# JIT lifecycle suite against the configured live jitsudod instance.
+#
+# To run:
+#   gh workflow run e2e.yml
+
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      providers:
+        description: "Comma-separated list of providers to test (aws,azure,gcp,kubernetes) — leave blank for all"
+        required: false
+        default: ""
+
+jobs:
+  e2e:
+    name: E2E — ${{ github.event.inputs.providers || 'all providers' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Install cloud CLIs used by the verification steps inside the tests.
+      - name: Install AWS CLI
+        run: |
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+          rm -rf aws awscliv2.zip
+
+      - name: Install Azure CLI
+        run: curl -fsSL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      # kubectl is pre-installed on ubuntu-latest runners.
+
+      - name: Run E2E tests
+        env:
+          # Core
+          E2E_JITSUDOD_URL: ${{ secrets.E2E_JITSUDOD_URL }}
+          E2E_JITSUDO_TOKEN: ${{ secrets.E2E_JITSUDO_TOKEN }}
+          # AWS
+          E2E_AWS_ROLE_ARN: ${{ secrets.E2E_AWS_ROLE_ARN }}
+          E2E_AWS_SCOPE: ${{ secrets.E2E_AWS_SCOPE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.E2E_AWS_DEFAULT_REGION }}
+          # Azure
+          E2E_AZURE_ROLE: ${{ secrets.E2E_AZURE_ROLE }}
+          E2E_AZURE_SCOPE: ${{ secrets.E2E_AZURE_SCOPE }}
+          AZURE_CLIENT_ID: ${{ secrets.E2E_AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.E2E_AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.E2E_AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_AZURE_SUBSCRIPTION_ID }}
+          # GCP
+          E2E_GCP_ROLE: ${{ secrets.E2E_GCP_ROLE }}
+          E2E_GCP_PROJECT: ${{ secrets.E2E_GCP_PROJECT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
+          # Kubernetes
+          E2E_K8S_CLUSTER_ROLE: ${{ secrets.E2E_K8S_CLUSTER_ROLE }}
+          E2E_K8S_NAMESPACE: ${{ secrets.E2E_K8S_NAMESPACE }}
+          KUBECONFIG: ${{ runner.temp }}/kubeconfig
+        run: |
+          # Write GCP service account key if the secret is set.
+          if [ -n "${{ secrets.E2E_GCP_SA_KEY_JSON }}" ]; then
+            echo '${{ secrets.E2E_GCP_SA_KEY_JSON }}' > "${{ runner.temp }}/gcp-sa.json"
+          else
+            unset GOOGLE_APPLICATION_CREDENTIALS
+          fi
+
+          # Write kubeconfig if the secret is set.
+          if [ -n "${{ secrets.E2E_KUBECONFIG_B64 }}" ]; then
+            echo '${{ secrets.E2E_KUBECONFIG_B64 }}' | base64 -d > "${{ runner.temp }}/kubeconfig"
+          else
+            unset KUBECONFIG
+          fi
+
+          E2E_ENABLED=true make test-e2e

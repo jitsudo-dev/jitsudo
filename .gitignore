@@ -36,6 +36,10 @@ internal/gen/
 # Docker
 .docker/
 
+# E2E test credentials — never commit these
+test/e2e/.env.e2e
+test/e2e/testdata/
+
 # Secrets (never commit these)
 *.pem
 *.key
