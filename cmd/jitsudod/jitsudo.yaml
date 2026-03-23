@@ -1,0 +1,28 @@
+server:
+    http_addr: :8080
+    grpc_addr: :8443
+database:
+    url: postgres://jitsudo:jitsudo@localhost:5432/jitsudo?sslmode=disable
+auth:
+    oidc_issuer: https://idp.example.com
+    client_id: jitsudo-server
+tls:
+    cert_file: ""
+    key_file: ""
+    ca_file: ""
+providers:
+    aws: null
+    gcp: null
+    azure: null
+    kubernetes: null
+notifications:
+    slack: null
+    smtp: null
+    webhooks: []
+    siem: null
+mcp:
+    token: ""
+    agent_identity: ""
+log:
+    level: info
+    format: json

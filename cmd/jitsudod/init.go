@@ -38,7 +38,10 @@ runs migrations, and writes a starter configuration file.`,
     --oidc-client-id jitsudo-server`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbURL == "" {
-				return fmt.Errorf("--db-url is required")
+				dbURL = os.Getenv("JITSUDOD_DATABASE_URL")
+			}
+			if dbURL == "" {
+				return fmt.Errorf("--db-url or JITSUDOD_DATABASE_URL is required")
 			}
 			if oidcIssuer == "" {
 				return fmt.Errorf("--oidc-issuer is required")
@@ -114,7 +117,7 @@ runs migrations, and writes a starter configuration file.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (required)")
+	cmd.Flags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (required; or set JITSUDOD_DATABASE_URL)")
 	cmd.Flags().StringVar(&oidcIssuer, "oidc-issuer", "", "OIDC issuer URL (required)")
 	cmd.Flags().StringVar(&clientID, "oidc-client-id", "", "OIDC client ID (required)")
 	cmd.Flags().StringVar(&httpAddr, "http-addr", ":8080", "HTTP listen address")

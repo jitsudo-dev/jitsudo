@@ -12,13 +12,14 @@ import (
 )
 
 func TestInitCmd_MissingDBURL(t *testing.T) {
+	t.Setenv("JITSUDOD_DATABASE_URL", "")
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{
 		"--oidc-issuer", "https://idp.example.com",
 		"--oidc-client-id", "jitsudo-server",
 	})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--db-url is required") {
+	if err == nil || !strings.Contains(err.Error(), "--db-url or JITSUDOD_DATABASE_URL is required") {
 		t.Errorf("expected --db-url error, got: %v", err)
 	}
 }
