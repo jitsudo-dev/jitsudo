@@ -25,26 +25,58 @@ func TestInitCmd_MissingDBURL(t *testing.T) {
 }
 
 func TestInitCmd_MissingOIDCIssuer(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_ISSUER", "")
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{
 		"--db-url", "postgres://localhost/jitsudo",
 		"--oidc-client-id", "jitsudo-server",
 	})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--oidc-issuer is required") {
+	if err == nil || !strings.Contains(err.Error(), "--oidc-issuer or JITSUDOD_OIDC_ISSUER is required") {
 		t.Errorf("expected --oidc-issuer error, got: %v", err)
 	}
 }
 
 func TestInitCmd_MissingClientID(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_CLIENT_ID", "")
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{
 		"--db-url", "postgres://localhost/jitsudo",
 		"--oidc-issuer", "https://idp.example.com",
 	})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--oidc-client-id is required") {
+	if err == nil || !strings.Contains(err.Error(), "--oidc-client-id or JITSUDOD_OIDC_CLIENT_ID is required") {
 		t.Errorf("expected --oidc-client-id error, got: %v", err)
+	}
+}
+
+func TestInitCmd_OIDCIssuerFromEnv(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_ISSUER", "https://env-idp.example.com")
+	t.Setenv("JITSUDOD_DATABASE_URL", "")
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{
+		"--db-url", "postgres://localhost/jitsudo",
+		"--oidc-client-id", "jitsudo-server",
+		// --oidc-issuer intentionally omitted; satisfied by JITSUDOD_OIDC_ISSUER
+	})
+	err := cmd.Execute()
+	if err != nil && strings.Contains(err.Error(), "--oidc-issuer") {
+		t.Errorf("oidc-issuer should have been satisfied by env var, got: %v", err)
+	}
+}
+
+func TestInitCmd_OIDCClientIDFromEnv(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_CLIENT_ID", "jitsudo-server-from-env")
+	t.Setenv("JITSUDOD_DATABASE_URL", "")
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{
+		"--db-url", "postgres://localhost/jitsudo",
+		"--oidc-issuer", "https://idp.example.com",
+		// --oidc-client-id intentionally omitted; satisfied by JITSUDOD_OIDC_CLIENT_ID
+	})
+	err := cmd.Execute()
+	if err != nil && strings.Contains(err.Error(), "--oidc-client-id") {
+		t.Errorf("oidc-client-id should have been satisfied by env var, got: %v", err)
 	}
 }
 

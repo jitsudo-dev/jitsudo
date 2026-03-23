@@ -44,10 +44,16 @@ runs migrations, and writes a starter configuration file.`,
 				return fmt.Errorf("--db-url or JITSUDOD_DATABASE_URL is required")
 			}
 			if oidcIssuer == "" {
-				return fmt.Errorf("--oidc-issuer is required")
+				oidcIssuer = os.Getenv("JITSUDOD_OIDC_ISSUER")
+			}
+			if oidcIssuer == "" {
+				return fmt.Errorf("--oidc-issuer or JITSUDOD_OIDC_ISSUER is required")
 			}
 			if clientID == "" {
-				return fmt.Errorf("--oidc-client-id is required")
+				clientID = os.Getenv("JITSUDOD_OIDC_CLIENT_ID")
+			}
+			if clientID == "" {
+				return fmt.Errorf("--oidc-client-id or JITSUDOD_OIDC_CLIENT_ID is required")
 			}
 
 			out := cmd.OutOrStdout()
@@ -117,9 +123,9 @@ runs migrations, and writes a starter configuration file.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (required; or set JITSUDOD_DATABASE_URL)")
-	cmd.Flags().StringVar(&oidcIssuer, "oidc-issuer", "", "OIDC issuer URL (required)")
-	cmd.Flags().StringVar(&clientID, "oidc-client-id", "", "OIDC client ID (required)")
+	cmd.Flags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL [env: JITSUDOD_DATABASE_URL]")
+	cmd.Flags().StringVar(&oidcIssuer, "oidc-issuer", "", "OIDC issuer URL [env: JITSUDOD_OIDC_ISSUER]")
+	cmd.Flags().StringVar(&clientID, "oidc-client-id", "", "OIDC client ID [env: JITSUDOD_OIDC_CLIENT_ID]")
 	cmd.Flags().StringVar(&httpAddr, "http-addr", ":8080", "HTTP listen address")
 	cmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":8443", "gRPC listen address")
 	cmd.Flags().StringVar(&configOut, "config-out", "jitsudo.yaml", "Path to write the generated configuration file")
