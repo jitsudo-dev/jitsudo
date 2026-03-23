@@ -1,8 +1,9 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 // Package config loads jitsudod configuration from an optional YAML file and
 // overlays JITSUDOD_* environment variables on top. Environment variables
 // always win, preserving twelve-factor and Kubernetes Secret compatibility.
-//
-// License: Elastic License 2.0 (ELv2)
 package config
 
 import (

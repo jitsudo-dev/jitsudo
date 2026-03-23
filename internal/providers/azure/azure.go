@@ -1,10 +1,11 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package azure implements the jitsudo Provider interface for Microsoft Azure.
 // It grants temporary elevated access via Azure RBAC role assignments created
 // through the ARM Authorization API. User principal IDs are resolved via the
 // Microsoft Graph API. Role assignments use deterministic GUIDs derived from
 // the RequestID to guarantee idempotency.
-//
-// License: Apache 2.0
 package azure
 
 import (

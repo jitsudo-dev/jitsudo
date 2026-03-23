@@ -1,4 +1,6 @@
-// License: Elastic License 2.0 (ELv2)
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 package store
 
 import (

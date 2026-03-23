@@ -1,6 +1,7 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 // Package store implements the PostgreSQL data access layer for jitsudod.
-//
-// License: Elastic License 2.0 (ELv2)
 package store
 
 import (

@@ -1,5 +1,8 @@
 //go:build integration
 
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package aws — integration tests against LocalStack.
 //
 // Prerequisites:
@@ -10,8 +13,6 @@
 // Run with:
 //
 //	go test ./internal/providers/aws/... -tags integration -v
-//
-// License: Apache 2.0
 package aws_test
 
 import (

@@ -21,3 +21,11 @@ plugins:
   # OpenAPI v2 spec
   - remote: buf.build/grpc-ecosystem/openapiv2
     out: api/openapi
+
+  # SPDX license headers on generated Go files
+  - remote: buf.build/bufbuild/license-header
+    out: internal/gen/proto/go
+    opt:
+      - license_type=apache
+      - copyright_owner=Yu Technology Group, LLC d/b/a jitsudo
+      - year_range=2026

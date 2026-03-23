@@ -1,7 +1,8 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 // Package policy wraps the embedded OPA engine for eligibility and approval
 // policy evaluation. Policies are written in Rego and stored in PostgreSQL.
-//
-// License: Elastic License 2.0 (ELv2)
 package policy
 
 import (

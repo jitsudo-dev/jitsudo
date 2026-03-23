@@ -1,7 +1,8 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 // jitsudod is the jitsudo control plane daemon.
 // It exposes a REST API (via grpc-gateway) and a native gRPC API.
-//
-// License: Elastic License 2.0 (ELv2)
 package main
 
 import (

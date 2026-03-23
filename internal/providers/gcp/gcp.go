@@ -1,8 +1,9 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package gcp implements the jitsudo Provider interface for Google Cloud Platform.
 // It grants temporary elevated access via IAM conditional role bindings with
 // an expiry condition written as a CEL expression.
-//
-// License: Apache 2.0
 package gcp
 
 import (

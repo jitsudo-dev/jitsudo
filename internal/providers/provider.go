@@ -1,8 +1,9 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package providers defines the interface all cloud provider adapters must implement.
 // The Provider interface is the core abstraction enabling jitsudo to support multiple
 // cloud platforms without modifying the control plane logic.
-//
-// License: Apache 2.0
 package providers
 
 import (

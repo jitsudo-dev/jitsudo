@@ -1,8 +1,9 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package mock provides a mock implementation of the providers.Provider interface
 // for use in unit tests and local development. The mock does not make any
 // real cloud API calls; it stores state in memory.
-//
-// License: Apache 2.0
 package mock
 
 import (

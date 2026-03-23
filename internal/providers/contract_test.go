@@ -1,3 +1,6 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package providers contains the contract test suite that all Provider implementations
 // must satisfy. Any new provider must be added to the providerFactories map and
 // must pass every test in this file.

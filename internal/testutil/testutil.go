@@ -1,5 +1,8 @@
 //go:build integration
 
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package testutil provides shared helpers for integration tests.
 // All functions in this package require external services (postgres, dex) to be running.
 //

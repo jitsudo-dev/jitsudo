@@ -1,8 +1,9 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package aws implements the jitsudo Provider interface for AWS.
 // It grants temporary elevated access via STS AssumeRole and optionally
 // revokes sessions by attaching an inline IAM deny policy.
-//
-// License: Apache 2.0
 package aws
 
 import (

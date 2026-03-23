@@ -1,8 +1,9 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package kubernetes implements the jitsudo Provider interface for Kubernetes.
 // It grants temporary elevated access by creating a ClusterRoleBinding or
 // RoleBinding with a TTL annotation, cleaned up by the jitsudod expiry sweeper.
-//
-// License: Apache 2.0
 package kubernetes
 
 import (

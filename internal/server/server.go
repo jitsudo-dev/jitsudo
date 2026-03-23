@@ -1,7 +1,8 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 // Package server implements the jitsudod control plane.
 // It exposes both a REST API (via grpc-gateway) and a native gRPC API.
-//
-// License: Elastic License 2.0 (ELv2)
 package server
 
 import (

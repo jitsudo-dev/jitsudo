@@ -1,3 +1,6 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Elastic-2.0
+
 // Package mcp implements an MCP (Model Context Protocol) server for the
 // jitsudo Tier 2 AI approver interface. AI agents connect via the Streamable
 // HTTP transport, call tools to review pending requests, and emit approve,
@@ -5,8 +8,6 @@
 //
 // Authentication: Bearer token (not OIDC; agents use static API keys).
 // Mount point: POST /mcp (handled by the HTTP mux in server.go).
-//
-// License: Elastic License 2.0 (ELv2)
 package mcp
 
 import (

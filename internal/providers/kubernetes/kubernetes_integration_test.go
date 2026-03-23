@@ -1,5 +1,8 @@
 //go:build integration
 
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // Package kubernetes — integration tests using a real Kubernetes API server
 // via controller-runtime's envtest (no Docker / kind required).
 //
@@ -13,8 +16,6 @@
 //	go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 //	setup-envtest use --bin-dir /usr/local/kubebuilder/bin
 //	export KUBEBUILDER_ASSETS=/usr/local/kubebuilder/bin
-//
-// License: Apache 2.0
 package kubernetes_test
 
 import (

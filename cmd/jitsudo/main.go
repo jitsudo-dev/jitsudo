@@ -1,6 +1,7 @@
+// Copyright © 2026 Yu Technology Group, LLC d/b/a jitsudo
+// SPDX-License-Identifier: Apache-2.0
+
 // jitsudo is the CLI client for the jitsudo Just-In-Time privileged access management system.
-//
-// License: Apache 2.0
 package main
 
 import (
