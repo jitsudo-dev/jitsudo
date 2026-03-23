@@ -25,7 +25,8 @@ cd jitsudo
 make docker-up
 
 # 2. Install the CLI (macOS/Linux)
-curl -fsSL https://jitsudo.dev/install.sh | sh
+brew install jitsudo-dev/tap/jitsudo
+# or: curl -fsSL https://jitsudo.dev/install.sh | sh
 
 # 3. Log in (uses the local dev OIDC provider)
 jitsudo login --provider http://localhost:5556/dex
@@ -95,13 +96,43 @@ jitsudo CLI  ──gRPC/REST──>  jitsudod Control Plane
 
 See [docs/adr/](docs/adr/) for Architecture Decision Records.
 
+## Installation
+
+| Method | Platform | Command |
+|--------|----------|---------|
+| Homebrew | macOS / Linux | `brew install jitsudo-dev/tap/jitsudo` |
+| Container image | Any (Docker/Podman) | `docker pull ghcr.io/jitsudo-dev/jitsudo` |
+| Install script | macOS / Linux | `curl -fsSL https://jitsudo.dev/install.sh \| sh` |
+
 ## Deployment
 
 | Method | Target | Command |
 |--------|--------|---------|
 | Docker Compose | Local / evaluation | `make docker-up` |
+| Container image | Single VM | `docker run ghcr.io/jitsudo-dev/jitsudod` |
 | Bootstrap command | Single VM / bare metal | `jitsudod init` |
 | Helm chart | Kubernetes (production) | `helm install jitsudo jitsudo/jitsudo` |
+
+## Cloud resource provisioning
+
+Use the included Terraform modules to provision the IAM roles, service principals, and service accounts that jitsudo needs in each cloud:
+
+```sh
+# AWS — IAM role with trust policy for jitsudod
+module "jitsudo_aws" {
+  source         = "github.com/jitsudo-dev/jitsudo//terraform/modules/aws"
+  role_name      = "jitsudo-prod"
+  jitsudod_role_arn = "arn:aws:iam::ACCOUNT:role/jitsudod"
+}
+
+# GCP — service account with projectIamAdmin
+module "jitsudo_gcp" {
+  source     = "github.com/jitsudo-dev/jitsudo//terraform/modules/gcp"
+  project_id = "my-project"
+}
+```
+
+See [terraform/modules/](terraform/modules/) for AWS, Azure, and GCP modules with full usage examples.
 
 ## License
 

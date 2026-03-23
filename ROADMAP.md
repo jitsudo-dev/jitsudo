@@ -67,10 +67,10 @@ Goal: Implement the three-tier approval model and the architectural decisions ca
 
 ## Milestone 5: Ecosystem
 
-- [ ] GitHub Container Registry images (ghcr.io/jitsudo-dev) — jitsudod server + jitsudo CLI, multi-arch, tag-triggered release workflow
-- [ ] Homebrew tap — `jitsudo-dev/homebrew-tap` repo, formula auto-updated on release
-- [ ] Terraform modules (AWS/Azure/GCP) — provision IAM roles, Azure app registrations, GCP service accounts for jitsudo deployments
-- [ ] E2E test suite (live cloud accounts) — full JIT lifecycle tests against real AWS/Azure/GCP/Kubernetes, `workflow_dispatch`-triggered CI
+- [x] GitHub Container Registry images (ghcr.io/jitsudo-dev) — jitsudod server + jitsudo CLI, multi-arch, tag-triggered release workflow
+- [x] Homebrew tap — `jitsudo-dev/homebrew-tap` repo, formula auto-updated on release
+- [x] Terraform modules (AWS/Azure/GCP) — provision IAM roles, Azure app registrations, GCP service accounts for jitsudo deployments
+- [x] E2E test suite (live cloud accounts) — full JIT lifecycle tests against real AWS/Azure/GCP/Kubernetes, `workflow_dispatch`-triggered CI
 
 ## Milestone 6: Enterprise Features
 

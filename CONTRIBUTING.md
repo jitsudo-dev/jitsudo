@@ -20,7 +20,7 @@ This certifies that you wrote the patch or have the right to submit it. See [dev
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.26+
 - Docker or Podman (for integration tests)
 - `buf` CLI (for protobuf code generation) — `brew install bufbuild/buf/buf`
 - `golangci-lint` — `brew install golangci-lint`
@@ -57,7 +57,9 @@ internal/server/   Control plane implementation
 internal/providers/Provider interface + cloud adapters
 api/proto/         Protobuf definitions
 pkg/               Public Go packages
-deploy/            Docker Compose and Kubernetes manifests
+deploy/            Docker Compose, Kubernetes manifests, Dockerfiles
+terraform/modules/ Terraform modules for AWS, Azure, and GCP
+test/e2e/          End-to-end tests against live cloud accounts
 docs/adr/          Architecture Decision Records
 ```
 
@@ -87,6 +89,19 @@ test: add contract tests for AWS provider
 3. If you changed `.proto` files, regenerate and commit: `make proto`
 4. Fill in the PR template
 5. Request review from a maintainer
+
+## Running E2E tests
+
+E2E tests connect to a real jitsudod instance and require live cloud credentials. They are excluded from `make test` and `make test-integration` by the `//go:build e2e` tag.
+
+```bash
+cp test/e2e/.env.e2e.example test/e2e/.env.e2e
+# fill in test/e2e/.env.e2e with real values
+source test/e2e/.env.e2e
+E2E_ENABLED=true make test-e2e
+```
+
+See [test/e2e/README.md](test/e2e/README.md) for per-provider setup instructions and required environment variables.
 
 ## Adding a New Provider
 
