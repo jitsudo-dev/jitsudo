@@ -66,10 +66,12 @@ jitsudo shell <id>             Open an elevated interactive shell
 jitsudo revoke <id>            Revoke an active elevation early
 jitsudo audit                  Query the audit log
 jitsudo policy                 Manage OPA/Rego policies (admin)
-jitsudo server init            Bootstrap a new control plane instance
 jitsudo server status          Check control plane health
 jitsudo server version         Print server version and API compatibility
 jitsudo server reload-policies Trigger OPA policy engine reload
+
+jitsudod init                  Bootstrap a new control plane instance (ELv2)
+jitsudod                       Run the control plane daemon (ELv2)
 ```
 
 ## Architecture
@@ -98,7 +100,7 @@ See [docs/adr/](docs/adr/) for Architecture Decision Records.
 | Method | Target | Command |
 |--------|--------|---------|
 | Docker Compose | Local / evaluation | `make docker-up` |
-| Bootstrap command | Single VM / bare metal | `jitsudo server init` |
+| Bootstrap command | Single VM / bare metal | `jitsudod init` |
 | Helm chart | Kubernetes (production) | `helm install jitsudo jitsudo/jitsudo` |
 
 ## License

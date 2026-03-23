@@ -7,86 +7,38 @@ package main
 
 import (
 	"context"
-	"flag"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
-
-	"github.com/jitsudo-dev/jitsudo/internal/config"
-	"github.com/jitsudo-dev/jitsudo/internal/server"
-	"github.com/jitsudo-dev/jitsudo/internal/store"
-	"github.com/jitsudo-dev/jitsudo/internal/version"
+	"github.com/spf13/cobra"
 )
 
 func main() {
-	configPath := flag.String("config", os.Getenv("JITSUDOD_CONFIG"), "Path to YAML config file (overrides env vars when set)")
-	flag.Parse()
-
-	// Configure structured JSON logging.
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
-	log.Logger = log.With().Caller().Logger()
-
-	log.Info().
-		Str("version", version.Version).
-		Msg("jitsudod starting")
-
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load configuration")
-	}
-
-	// Apply log level from config.
-	if lvl, err := zerolog.ParseLevel(cfg.Log.Level); err == nil {
-		zerolog.SetGlobalLevel(lvl)
-	}
-
-	// Run database migrations before opening the pool (safe to run on every start).
-	if err := store.RunMigrations(cfg.Database.URL); err != nil {
-		log.Fatal().Err(err).Msg("database migration failed")
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	st, err := store.New(ctx, cfg.Database.URL)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open database pool")
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
+		os.Exit(1)
 	}
-	defer st.Close()
+}
 
-	srv := server.New(server.Config{
-		HTTPAddr:     cfg.Server.HTTPAddr,
-		GRPCAddr:     cfg.Server.GRPCAddr,
-		DatabaseURL:  cfg.Database.URL,
-		OIDCIssuer:   cfg.Auth.OIDCIssuer,
-		OIDCClientID: cfg.Auth.ClientID,
-		TLS: server.TLSConfig{
-			CertFile: cfg.TLS.CertFile,
-			KeyFile:  cfg.TLS.KeyFile,
-			CAFile:   cfg.TLS.CAFile,
-		},
-		Providers: server.ProvidersConfig{
-			AWS:        cfg.Providers.AWS,
-			GCP:        cfg.Providers.GCP,
-			Azure:      cfg.Providers.Azure,
-			Kubernetes: cfg.Providers.Kubernetes,
-		},
-		Notifications: server.NotificationsConfig{
-			Slack:    cfg.Notifications.Slack,
-			SMTP:     cfg.Notifications.SMTP,
-			Webhooks: cfg.Notifications.Webhooks,
-			SIEM:     cfg.Notifications.SIEM,
-		},
-		MCPToken:         cfg.MCP.Token,
-		MCPAgentIdentity: cfg.MCP.AgentIdentity,
-	}, st)
+func newRootCmd() *cobra.Command {
+	var configPath string
 
-	if err := srv.Start(ctx); err != nil {
-		log.Fatal().Err(err).Msg("jitsudod exited with error")
+	cmd := &cobra.Command{
+		Use:           "jitsudod",
+		Short:         "jitsudo control plane daemon",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServe(cmd.Context(), configPath)
+		},
 	}
 
-	log.Info().Msg("jitsudod stopped")
+	cmd.Flags().StringVar(&configPath, "config", os.Getenv("JITSUDOD_CONFIG"), "Path to YAML config file (overrides env vars when set)")
+
+	cmd.AddCommand(newInitCmd())
+
+	return cmd
 }
