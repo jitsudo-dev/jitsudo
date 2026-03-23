@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Generate proto
+        run: buf generate
+
+      - name: Build release binaries
+        env:
+          VERSION: ${{ github.ref_name }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          LDFLAGS="-w -s -X github.com/jitsudo-dev/jitsudo/internal/version.Version=${VERSION}"
+          for target in \
+            "linux/amd64" \
+            "linux/arm64" \
+            "darwin/amd64" \
+            "darwin/arm64" \
+            "windows/amd64"; do
+            GOOS="${target%/*}"
+            GOARCH="${target#*/}"
+            EXT=""
+            [ "$GOOS" = "windows" ] && EXT=".exe"
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
+              -o "dist/jitsudo-${GOOS}-${GOARCH}${EXT}" ./cmd/jitsudo
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
+              -o "dist/jitsudod-${GOOS}-${GOARCH}${EXT}" ./cmd/jitsudod
+          done
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "jitsudo ${{ github.ref_name }}" \
+            --generate-notes \
+            dist/*
+
+  images:
+    name: Container Images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for server image
+        id: server-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/jitsudo-dev/jitsudo
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.jitsudod
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ github.ref_name }}
+          tags: ${{ steps.server-meta.outputs.tags }}
+          labels: ${{ steps.server-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for CLI image
+        id: cli-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/jitsudo-dev/jitsudo-cli
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push CLI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.jitsudo
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ github.ref_name }}
+          tags: ${{ steps.cli-meta.outputs.tags }}
+          labels: ${{ steps.cli-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

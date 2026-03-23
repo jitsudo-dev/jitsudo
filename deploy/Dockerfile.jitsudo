@@ -21,14 +21,12 @@ COPY . .
 RUN buf generate
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-w -s -X github.com/jitsudo-dev/jitsudo/internal/version.Version=${VERSION}" \
-    -o /jitsudod \
-    ./cmd/jitsudod
+    -o /jitsudo \
+    ./cmd/jitsudo
 
 # Runtime stage
 FROM gcr.io/distroless/static-debian12:nonroot
 
-COPY --from=builder /jitsudod /jitsudod
+COPY --from=builder /jitsudo /jitsudo
 
-EXPOSE 8080 8443
-
-ENTRYPOINT ["/jitsudod"]
+ENTRYPOINT ["/jitsudo"]
