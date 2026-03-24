@@ -56,15 +56,31 @@ func newPolicyListCmd() *cobra.Command {
 				return nil
 			}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tNAME\tTYPE\tENABLED\tUPDATED")
-			fmt.Fprintln(w, strings.Repeat("-", 80))
-			for _, p := range policies {
-				updated := p.GetUpdatedAt().AsTime().UTC().Format(time.RFC3339)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%s\n",
-					p.GetId(), p.GetName(), policyTypeString(p.GetType()), p.GetEnabled(), updated)
+			out := cmd.OutOrStdout()
+			switch flags.output {
+			case "json":
+				rows := make([]policyRow, len(policies))
+				for i, p := range policies {
+					rows[i] = policyToRow(p, false)
+				}
+				return encodeJSON(out, rows)
+			case "yaml":
+				rows := make([]policyRow, len(policies))
+				for i, p := range policies {
+					rows[i] = policyToRow(p, false)
+				}
+				return encodeYAML(out, rows)
+			default:
+				w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "ID\tNAME\tTYPE\tENABLED\tUPDATED")
+				fmt.Fprintln(w, strings.Repeat("-", 80))
+				for _, p := range policies {
+					updated := p.GetUpdatedAt().AsTime().UTC().Format(time.RFC3339)
+					fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%s\n",
+						p.GetId(), p.GetName(), policyTypeString(p.GetType()), p.GetEnabled(), updated)
+				}
+				return w.Flush()
 			}
-			return w.Flush()
 		},
 	}
 }
@@ -90,14 +106,21 @@ func newPolicyGetCmd() *cobra.Command {
 
 			p := resp.GetPolicy()
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "ID:          %s\n", p.GetId())
-			fmt.Fprintf(out, "Name:        %s\n", p.GetName())
-			fmt.Fprintf(out, "Type:        %s\n", policyTypeString(p.GetType()))
-			fmt.Fprintf(out, "Enabled:     %v\n", p.GetEnabled())
-			fmt.Fprintf(out, "Description: %s\n", p.GetDescription())
-			fmt.Fprintf(out, "Updated:     %s\n", p.GetUpdatedAt().AsTime().UTC().Format(time.RFC3339))
-			fmt.Fprintf(out, "\n--- Rego ---\n%s\n", p.GetRego())
-			return nil
+			switch flags.output {
+			case "json":
+				return encodeJSON(out, policyToRow(p, true))
+			case "yaml":
+				return encodeYAML(out, policyToRow(p, true))
+			default:
+				fmt.Fprintf(out, "ID:          %s\n", p.GetId())
+				fmt.Fprintf(out, "Name:        %s\n", p.GetName())
+				fmt.Fprintf(out, "Type:        %s\n", policyTypeString(p.GetType()))
+				fmt.Fprintf(out, "Enabled:     %v\n", p.GetEnabled())
+				fmt.Fprintf(out, "Description: %s\n", p.GetDescription())
+				fmt.Fprintf(out, "Updated:     %s\n", p.GetUpdatedAt().AsTime().UTC().Format(time.RFC3339))
+				fmt.Fprintf(out, "\n--- Rego ---\n%s\n", p.GetRego())
+				return nil
+			}
 		},
 	}
 }

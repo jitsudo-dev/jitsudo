@@ -67,12 +67,19 @@ Upon approval, credentials are issued for the specified duration and automatical
 
 			req := resp.GetRequest()
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Request ID: %s\nState:      %s\n", req.GetId(), stateString(req.GetState()))
-			if !flags.quiet {
-				fmt.Fprintf(out, "Provider:   %s\nRole:       %s\nScope:      %s\n",
-					req.GetProvider(), req.GetRole(), req.GetResourceScope())
+			switch flags.output {
+			case "json":
+				return encodeJSON(out, requestToRow(req))
+			case "yaml":
+				return encodeYAML(out, requestToRow(req))
+			default:
+				fmt.Fprintf(out, "Request ID: %s\nState:      %s\n", req.GetId(), stateString(req.GetState()))
+				if !flags.quiet {
+					fmt.Fprintf(out, "Provider:   %s\nRole:       %s\nScope:      %s\n",
+						req.GetProvider(), req.GetRole(), req.GetResourceScope())
+				}
+				return nil
 			}
-			return nil
 		},
 	}
 
