@@ -186,6 +186,66 @@ approver_tier := "auto" if {
 	}
 }
 
+// ── compileModules tests ─────────────────────────────────────────────────────
+
+// TestCompileModules_ValidEligibility verifies that a valid eligibility policy compiles.
+func TestCompileModules_ValidEligibility(t *testing.T) {
+	modules := map[string]string{
+		"allow-sre.rego": `
+package jitsudo.eligibility
+import rego.v1
+default allow := false
+allow if { input.user.groups[_] == "sre" }
+`,
+	}
+	_, err := compileModules(context.Background(), store.PolicyTypeEligibility, "data.jitsudo.eligibility.allow", modules)
+	if err != nil {
+		t.Fatalf("expected compile success; got: %v", err)
+	}
+}
+
+// TestCompileModules_ConflictingDefaultRules verifies that two policies with
+// conflicting default rules produce a compile error.
+func TestCompileModules_ConflictingDefaultRules(t *testing.T) {
+	modules := map[string]string{
+		"policy-a.rego": "package jitsudo.eligibility\ndefault allow := true",
+		"policy-b.rego": "package jitsudo.eligibility\ndefault allow := false",
+	}
+	_, err := compileModules(context.Background(), store.PolicyTypeEligibility, "data.jitsudo.eligibility.allow", modules)
+	if err == nil {
+		t.Fatal("expected compile error for conflicting default rules, got nil")
+	}
+}
+
+// TestCompileModules_EmptyModulesDenyAll verifies that an empty module map
+// compiles successfully using the deny-all fallback.
+func TestCompileModules_EmptyModulesDenyAll(t *testing.T) {
+	_, err := compileModules(context.Background(), store.PolicyTypeEligibility, "data.jitsudo.eligibility.allow", nil)
+	if err != nil {
+		t.Fatalf("expected compile success for empty modules; got: %v", err)
+	}
+}
+
+// TestCompileModules_EmptyApprovalModules verifies the deny-all fallback for
+// the approval policy type.
+func TestCompileModules_EmptyApprovalModules(t *testing.T) {
+	_, err := compileModules(context.Background(), store.PolicyTypeApproval, "data.jitsudo.approval.allow", nil)
+	if err != nil {
+		t.Fatalf("expected compile success for empty approval modules; got: %v", err)
+	}
+}
+
+// TestCompileModules_SyntaxError verifies that a Rego syntax error is caught.
+func TestCompileModules_SyntaxError(t *testing.T) {
+	modules := map[string]string{
+		"bad.rego": "package jitsudo.eligibility\n!!!not valid rego!!!",
+	}
+	_, err := compileModules(context.Background(), store.PolicyTypeEligibility, "data.jitsudo.eligibility.allow", modules)
+	if err == nil {
+		t.Fatal("expected compile error for invalid Rego syntax, got nil")
+	}
+}
+
 // ── EvalEligibility tests ───────────────────────────────────────────────────
 
 // newEngineWithEligibilityPolicy creates an Engine whose eligibilityQuery is
