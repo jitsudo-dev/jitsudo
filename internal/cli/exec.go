@@ -61,7 +61,7 @@ provider-specific credential variables (e.g., MOCK_ACCESS_KEY for the mock provi
 				if exitErr, ok := err.(*exec.ExitError); ok {
 					os.Exit(exitErr.ExitCode())
 				}
-				return fmt.Errorf("exec: %w", err)
+				return err
 			}
 			return nil
 		},
