@@ -44,8 +44,16 @@ func newStatusCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("get request: %w", err)
 				}
-				printRequest(out, resp.GetRequest())
-				return nil
+				r := resp.GetRequest()
+				switch flags.output {
+				case "json":
+					return encodeJSON(out, requestToRow(r))
+				case "yaml":
+					return encodeYAML(out, requestToRow(r))
+				default:
+					printRequest(out, r)
+					return nil
+				}
 			}
 
 			filter := &jitsudov1alpha1.ListRequestsFilter{
@@ -63,13 +71,28 @@ func newStatusCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Fprintf(out, "%-28s %-10s %-25s %s\n", "ID", "STATE", "REQUESTER", "REASON")
-			fmt.Fprintln(out, strings.Repeat("-", 85))
-			for _, r := range requests {
-				fmt.Fprintf(out, "%-28s %-10s %-25s %s\n",
-					r.GetId(), stateString(r.GetState()), r.GetRequesterIdentity(), r.GetReason())
+			switch flags.output {
+			case "json":
+				rows := make([]requestRow, len(requests))
+				for i, r := range requests {
+					rows[i] = requestToRow(r)
+				}
+				return encodeJSON(out, rows)
+			case "yaml":
+				rows := make([]requestRow, len(requests))
+				for i, r := range requests {
+					rows[i] = requestToRow(r)
+				}
+				return encodeYAML(out, rows)
+			default:
+				fmt.Fprintf(out, "%-28s %-10s %-25s %s\n", "ID", "STATE", "REQUESTER", "REASON")
+				fmt.Fprintln(out, strings.Repeat("-", 85))
+				for _, r := range requests {
+					fmt.Fprintf(out, "%-28s %-10s %-25s %s\n",
+						r.GetId(), stateString(r.GetState()), r.GetRequesterIdentity(), r.GetReason())
+				}
+				return nil
 			}
-			return nil
 		},
 	}
 
