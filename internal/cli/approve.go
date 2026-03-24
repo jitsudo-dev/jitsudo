@@ -34,7 +34,7 @@ func newApproveCmd() *cobra.Command {
 				Comment:   comment,
 			})
 			if err != nil {
-				return fmt.Errorf("approve: %w", err)
+				return fmt.Errorf("approve: %w", friendlyError(err))
 			}
 
 			req := resp.GetRequest()
@@ -70,7 +70,7 @@ func newDenyCmd() *cobra.Command {
 				Reason:    reason,
 			})
 			if err != nil {
-				return fmt.Errorf("deny: %w", err)
+				return fmt.Errorf("deny: %w", friendlyError(err))
 			}
 
 			req := resp.GetRequest()

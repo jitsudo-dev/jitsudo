@@ -34,7 +34,7 @@ func newRevokeCmd() *cobra.Command {
 				Reason:    reason,
 			})
 			if err != nil {
-				return fmt.Errorf("revoke: %w", err)
+				return fmt.Errorf("revoke: %w", friendlyError(err))
 			}
 
 			req := resp.GetRequest()

@@ -47,7 +47,7 @@ func newPolicyListCmd() *cobra.Command {
 
 			resp, err := c.Service().ListPolicies(ctx, &jitsudov1alpha1.ListPoliciesInput{})
 			if err != nil {
-				return fmt.Errorf("list policies: %w", err)
+				return fmt.Errorf("list policies: %w", friendlyError(err))
 			}
 
 			policies := resp.GetPolicies()
@@ -85,7 +85,7 @@ func newPolicyGetCmd() *cobra.Command {
 
 			resp, err := c.Service().GetPolicy(ctx, &jitsudov1alpha1.GetPolicyInput{Id: args[0]})
 			if err != nil {
-				return fmt.Errorf("get policy: %w", err)
+				return fmt.Errorf("get policy: %w", friendlyError(err))
 			}
 
 			p := resp.GetPolicy()
@@ -155,7 +155,7 @@ func newPolicyApplyCmd() *cobra.Command {
 				Enabled:     !disable,
 			})
 			if err != nil {
-				return fmt.Errorf("apply policy: %w", err)
+				return fmt.Errorf("apply policy: %w", friendlyError(err))
 			}
 
 			p := resp.GetPolicy()
@@ -191,7 +191,7 @@ func newPolicyDeleteCmd() *cobra.Command {
 
 			_, err = c.Service().DeletePolicy(ctx, &jitsudov1alpha1.DeletePolicyInput{Id: args[0]})
 			if err != nil {
-				return fmt.Errorf("delete policy: %w", err)
+				return fmt.Errorf("delete policy: %w", friendlyError(err))
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Policy %s deleted.\n", args[0])
@@ -237,7 +237,7 @@ making any state changes. The input must match the OPA input structure:
 				Type:      pt,
 			})
 			if err != nil {
-				return fmt.Errorf("eval policy: %w", err)
+				return fmt.Errorf("eval policy: %w", friendlyError(err))
 			}
 
 			out := cmd.OutOrStdout()
