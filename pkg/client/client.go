@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/url"
 	"os"
 
 	"google.golang.org/grpc"
@@ -58,6 +59,13 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("client: ServerURL is required")
 	}
 
+	// grpc.NewClient expects a bare host:port target, not a URL with scheme.
+	// Strip http:// or https:// so that users can supply either form.
+	target := cfg.ServerURL
+	if u, err := url.Parse(target); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		target = u.Host
+	}
+
 	dialOpts := []grpc.DialOption{
 		grpc.WithUnaryInterceptor(bearerInterceptor(cfg.Token)),
 	}
@@ -76,9 +84,9 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
 	}
 
-	conn, err := grpc.NewClient(cfg.ServerURL, dialOpts...)
+	conn, err := grpc.NewClient(target, dialOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("client: dial %q: %w", cfg.ServerURL, err)
+		return nil, fmt.Errorf("client: dial %q: %w", target, err)
 	}
 
 	return &Client{
