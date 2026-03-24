@@ -20,9 +20,9 @@ import (
 // ── mock PolicyEngine ─────────────────────────────────────────────────────────
 
 type mockPolicyEngine struct {
-	reloadErr        error
-	compileCheckErr  error
-	evalRaw          func(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error)
+	reloadErr       error
+	compileCheckErr error
+	evalRaw         func(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error)
 }
 
 func (m *mockPolicyEngine) Reload(_ context.Context) error { return m.reloadErr }
