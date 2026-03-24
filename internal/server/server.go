@@ -41,11 +41,12 @@ import (
 
 // Config holds the server configuration.
 type Config struct {
-	HTTPAddr     string // e.g., ":8080"
-	GRPCAddr     string // e.g., ":8443"
-	DatabaseURL  string // PostgreSQL DSN
-	OIDCIssuer   string // e.g., "http://localhost:5556/dex"
-	OIDCClientID string // e.g., "jitsudo-cli"
+	HTTPAddr         string // e.g., ":8080"
+	GRPCAddr         string // e.g., ":8443"
+	DatabaseURL      string // PostgreSQL DSN
+	OIDCIssuer       string // e.g., "http://localhost:5556/dex"
+	OIDCDiscoveryURL string // optional: Docker-internal OIDC endpoint (overrides connection target, not expected issuer)
+	OIDCClientID     string // e.g., "jitsudo-cli"
 
 	// TLS configures mTLS for the gRPC listener.
 	// Leave zero-value for insecure local development.
@@ -117,8 +118,9 @@ func New(cfg Config, s *store.Store) *Server {
 func (s *Server) Start(ctx context.Context) error {
 	// ── Auth middleware ───────────────────────────────────────────────────────
 	verifier, err := auth.NewVerifier(ctx, auth.Config{
-		Issuer:   s.cfg.OIDCIssuer,
-		ClientID: s.cfg.OIDCClientID,
+		Issuer:       s.cfg.OIDCIssuer,
+		DiscoveryURL: s.cfg.OIDCDiscoveryURL,
+		ClientID:     s.cfg.OIDCClientID,
 	})
 	if err != nil {
 		return fmt.Errorf("server: auth verifier: %w", err)

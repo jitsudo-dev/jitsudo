@@ -57,8 +57,9 @@ type DatabaseCfg struct {
 
 // AuthCfg holds OIDC settings for verifying inbound JWTs.
 type AuthCfg struct {
-	OIDCIssuer string `yaml:"oidc_issuer"`
-	ClientID   string `yaml:"client_id"`
+	OIDCIssuer       string `yaml:"oidc_issuer"`
+	OIDCDiscoveryURL string `yaml:"oidc_discovery_url"`
+	ClientID         string `yaml:"client_id"`
 }
 
 // TLSCfg holds paths to TLS credentials for the gRPC listener.
@@ -147,6 +148,7 @@ func applyEnv(cfg *FileConfig) {
 	setIfEnv(&cfg.Server.GRPCAddr, "JITSUDOD_GRPC_ADDR")
 	setIfEnv(&cfg.Database.URL, "JITSUDOD_DATABASE_URL")
 	setIfEnv(&cfg.Auth.OIDCIssuer, "JITSUDOD_OIDC_ISSUER")
+	setIfEnv(&cfg.Auth.OIDCDiscoveryURL, "JITSUDOD_OIDC_DISCOVERY_URL")
 	setIfEnv(&cfg.Auth.ClientID, "JITSUDOD_OIDC_CLIENT_ID")
 	setIfEnv(&cfg.TLS.CertFile, "JITSUDOD_TLS_CERT_FILE")
 	setIfEnv(&cfg.TLS.KeyFile, "JITSUDOD_TLS_KEY_FILE")

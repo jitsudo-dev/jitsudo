@@ -20,8 +20,9 @@ import (
 
 // Config holds OIDC verifier configuration.
 type Config struct {
-	Issuer   string // OIDC issuer URL, e.g. "http://localhost:5556/dex"
-	ClientID string // Expected audience claim, e.g. "jitsudo-cli"
+	Issuer       string // OIDC issuer URL, e.g. "http://localhost:5556/dex"
+	DiscoveryURL string // Optional: override the OIDC discovery endpoint (e.g. Docker-internal URL). Defaults to Issuer when empty.
+	ClientID     string // Expected audience claim, e.g. "jitsudo-cli"
 }
 
 // Identity holds the verified claims extracted from an OIDC ID token.
@@ -37,10 +38,24 @@ type Verifier struct {
 }
 
 // NewVerifier constructs a Verifier by fetching the OIDC discovery document.
+// When cfg.DiscoveryURL is set, the discovery document is fetched from that URL
+// but tokens are expected to carry cfg.Issuer as their "iss" claim. This supports
+// deployments where the OIDC provider is reachable only via an internal address
+// (e.g. Docker service name) while tokens use a public or host-facing issuer URL.
+//
+// Security note: cfg.DiscoveryURL MUST point to the same OIDC provider as cfg.Issuer.
+// Setting it to a different provider's endpoint would allow that provider's keys to be
+// used for verification, which is a security vulnerability. This option exists only to
+// decouple the network-level connection endpoint from the issuer URL in tokens.
 func NewVerifier(ctx context.Context, cfg Config) (*Verifier, error) {
-	provider, err := gooidc.NewProvider(ctx, cfg.Issuer)
+	discoveryURL := cfg.Issuer
+	if cfg.DiscoveryURL != "" {
+		discoveryURL = cfg.DiscoveryURL
+		ctx = gooidc.InsecureIssuerURLContext(ctx, cfg.Issuer)
+	}
+	provider, err := gooidc.NewProvider(ctx, discoveryURL)
 	if err != nil {
-		return nil, fmt.Errorf("auth: OIDC discovery for %q: %w", cfg.Issuer, err)
+		return nil, fmt.Errorf("auth: OIDC discovery for %q: %w", discoveryURL, err)
 	}
 	v := provider.Verifier(&gooidc.Config{ClientID: cfg.ClientID})
 	return &Verifier{verifier: v}, nil

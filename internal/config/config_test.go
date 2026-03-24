@@ -33,7 +33,7 @@ func TestLoad_YAMLOverridesDefaults(t *testing.T) {
 	for _, key := range []string{
 		"JITSUDOD_HTTP_ADDR", "JITSUDOD_GRPC_ADDR",
 		"JITSUDOD_DATABASE_URL",
-		"JITSUDOD_OIDC_ISSUER", "JITSUDOD_OIDC_CLIENT_ID",
+		"JITSUDOD_OIDC_ISSUER", "JITSUDOD_OIDC_DISCOVERY_URL", "JITSUDOD_OIDC_CLIENT_ID",
 		"JITSUDOD_TLS_CERT_FILE", "JITSUDOD_TLS_KEY_FILE", "JITSUDOD_TLS_CA_FILE",
 		"JITSUDOD_LOG_LEVEL",
 		"JITSUDOD_SLACK_WEBHOOK_URL", "JITSUDOD_SMTP_HOST", "JITSUDOD_SMTP_PASSWORD",
@@ -164,6 +164,65 @@ func TestLoad_MissingFile(t *testing.T) {
 	_, err := config.Load("/nonexistent/path/config.yaml")
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
+	}
+}
+
+func TestLoad_OIDCDiscoveryURL_YAML(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_DISCOVERY_URL", "") // ensure env doesn't interfere
+	yaml := `
+auth:
+  oidc_issuer: "http://localhost:5556/dex"
+  oidc_discovery_url: "http://dex:5556/dex"
+  client_id: "jitsudo-cli"
+`
+	path := writeTemp(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Auth.OIDCDiscoveryURL != "http://dex:5556/dex" {
+		t.Errorf("Auth.OIDCDiscoveryURL = %q, want http://dex:5556/dex", cfg.Auth.OIDCDiscoveryURL)
+	}
+	if cfg.Auth.OIDCIssuer != "http://localhost:5556/dex" {
+		t.Errorf("Auth.OIDCIssuer = %q, want http://localhost:5556/dex", cfg.Auth.OIDCIssuer)
+	}
+}
+
+func TestLoad_OIDCDiscoveryURL_EnvVar(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_DISCOVERY_URL", "http://dex:5556/dex")
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Auth.OIDCDiscoveryURL != "http://dex:5556/dex" {
+		t.Errorf("Auth.OIDCDiscoveryURL = %q, want http://dex:5556/dex", cfg.Auth.OIDCDiscoveryURL)
+	}
+}
+
+func TestLoad_OIDCDiscoveryURL_EnvOverridesYAML(t *testing.T) {
+	yaml := `
+auth:
+  oidc_discovery_url: "http://from-yaml:5556/dex"
+`
+	path := writeTemp(t, yaml)
+	t.Setenv("JITSUDOD_OIDC_DISCOVERY_URL", "http://from-env:5556/dex")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Auth.OIDCDiscoveryURL != "http://from-env:5556/dex" {
+		t.Errorf("Auth.OIDCDiscoveryURL = %q, want http://from-env:5556/dex", cfg.Auth.OIDCDiscoveryURL)
+	}
+}
+
+func TestLoad_OIDCDiscoveryURL_DefaultEmpty(t *testing.T) {
+	t.Setenv("JITSUDOD_OIDC_DISCOVERY_URL", "")
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Auth.OIDCDiscoveryURL != "" {
+		t.Errorf("Auth.OIDCDiscoveryURL default = %q, want empty string", cfg.Auth.OIDCDiscoveryURL)
 	}
 }
 
