@@ -42,7 +42,7 @@ func newStatusCmd() *cobra.Command {
 					Id: args[0],
 				})
 				if err != nil {
-					return fmt.Errorf("get request: %w", err)
+					return fmt.Errorf("get request: %w", friendlyError(err))
 				}
 				printRequest(out, resp.GetRequest())
 				return nil
@@ -54,7 +54,7 @@ func newStatusCmd() *cobra.Command {
 			}
 			resp, err := c.Service().ListRequests(ctx, filter)
 			if err != nil {
-				return fmt.Errorf("list requests: %w", err)
+				return fmt.Errorf("list requests: %w", friendlyError(err))
 			}
 
 			requests := resp.GetRequests()

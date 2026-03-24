@@ -42,7 +42,7 @@ provider-specific credential variables (e.g., MOCK_ACCESS_KEY for the mock provi
 				RequestId: requestID,
 			})
 			if err != nil {
-				return fmt.Errorf("get credentials: %w", err)
+				return fmt.Errorf("get credentials: %w", friendlyError(err))
 			}
 
 			// Build environment: inherit parent env + inject credentials.

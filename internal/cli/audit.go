@@ -67,7 +67,7 @@ func newAuditCmd() *cobra.Command {
 
 			resp, err := c.Service().QueryAudit(ctx, queryInput)
 			if err != nil {
-				return fmt.Errorf("audit query: %w", err)
+				return fmt.Errorf("audit query: %w", friendlyError(err))
 			}
 
 			events := resp.GetEvents()
