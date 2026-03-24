@@ -77,12 +77,14 @@ func newAuditCmd() *cobra.Command {
 			}
 
 			switch output {
+			case "table":
+				return printAuditTable(cmd.OutOrStdout(), events)
 			case "json":
 				return printAuditJSON(cmd.OutOrStdout(), events)
 			case "csv":
 				return printAuditCSV(cmd.OutOrStdout(), events)
 			default:
-				return printAuditTable(cmd.OutOrStdout(), events)
+				return fmt.Errorf("unknown --output format %q: choose table, json, or csv", output)
 			}
 		},
 	}
@@ -92,7 +94,7 @@ func newAuditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&requestID, "request", "", "Filter by request ID")
 	cmd.Flags().StringVar(&since, "since", "", "Return events after this duration or timestamp (e.g. 24h, 2026-01-01T00:00:00Z)")
 	cmd.Flags().StringVar(&until, "until", "", "Return events before this RFC3339 timestamp")
-	cmd.Flags().StringVar(&output, "output", "table", "Output format: table, json, csv")
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, csv")
 
 	return cmd
 }
