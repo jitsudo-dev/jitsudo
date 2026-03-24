@@ -43,11 +43,12 @@ func runServe(ctx context.Context, configPath string) error {
 	defer st.Close()
 
 	srv := server.New(server.Config{
-		HTTPAddr:     cfg.Server.HTTPAddr,
-		GRPCAddr:     cfg.Server.GRPCAddr,
-		DatabaseURL:  cfg.Database.URL,
-		OIDCIssuer:   cfg.Auth.OIDCIssuer,
-		OIDCClientID: cfg.Auth.ClientID,
+		HTTPAddr:         cfg.Server.HTTPAddr,
+		GRPCAddr:         cfg.Server.GRPCAddr,
+		DatabaseURL:      cfg.Database.URL,
+		OIDCIssuer:       cfg.Auth.OIDCIssuer,
+		OIDCDiscoveryURL: cfg.Auth.OIDCDiscoveryURL,
+		OIDCClientID:     cfg.Auth.ClientID,
 		TLS: server.TLSConfig{
 			CertFile: cfg.TLS.CertFile,
 			KeyFile:  cfg.TLS.KeyFile,

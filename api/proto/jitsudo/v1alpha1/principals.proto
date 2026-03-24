@@ -31,7 +31,7 @@ message Principal {
 // SetPrincipalTrustTierInput is the request body for admin tier assignment.
 message SetPrincipalTrustTierInput {
   string identity = 1;
-  int32  trust_tier = 2;
+  int32 trust_tier = 2;
   string notes = 3;
 }
 

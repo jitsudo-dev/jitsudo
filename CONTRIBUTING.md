@@ -31,7 +31,11 @@ This certifies that you wrote the patch or have the right to submit it. See [dev
 git clone https://github.com/jitsudo-dev/jitsudo
 cd jitsudo
 
-# Start the local development environment
+# Start dependencies (postgres + dex) in Docker, run jitsudod on the host
+make dev-deps   # start postgres + dex
+make dev-server # build and run jitsudod locally (faster iteration)
+
+# Alternatively, start the full stack in Docker
 make docker-up
 
 # Build both binaries
