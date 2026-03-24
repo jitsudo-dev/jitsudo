@@ -9,6 +9,8 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -43,6 +45,12 @@ type Verifier struct {
 // deployments where the OIDC provider is reachable only via an internal address
 // (e.g. Docker service name) while tokens use a public or host-facing issuer URL.
 //
+// When the two URLs have different hosts (e.g. "localhost:5556" vs "dex:5556"), a
+// host-rewriting HTTP transport is injected so that JWKS fetches — which use the
+// issuer URL reported inside the discovery document — are transparently redirected
+// to the reachable discovery host. Without this, go-oidc would try to fetch JWKS
+// from the issuer host, which may be unreachable from inside a Docker network.
+//
 // Security note: cfg.DiscoveryURL MUST point to the same OIDC provider as cfg.Issuer.
 // Setting it to a different provider's endpoint would allow that provider's keys to be
 // used for verification, which is a security vulnerability. This option exists only to
@@ -52,6 +60,22 @@ func NewVerifier(ctx context.Context, cfg Config) (*Verifier, error) {
 	if cfg.DiscoveryURL != "" {
 		discoveryURL = cfg.DiscoveryURL
 		ctx = gooidc.InsecureIssuerURLContext(ctx, cfg.Issuer)
+
+		// If the issuer and discovery hosts differ, rewrite all OIDC HTTP requests
+		// (including JWKS fetches) from the issuer host to the discovery host.
+		// go-oidc captures the context's HTTP client at NewProvider time and reuses
+		// it for all subsequent key set fetches, so this one injection is sufficient.
+		issuerHost := hostOf(cfg.Issuer)
+		discoveryHost := hostOf(cfg.DiscoveryURL)
+		if issuerHost != "" && discoveryHost != "" && issuerHost != discoveryHost {
+			ctx = gooidc.ClientContext(ctx, &http.Client{
+				Transport: &hostRewriteTransport{
+					from:    issuerHost,
+					to:      discoveryHost,
+					wrapped: http.DefaultTransport,
+				},
+			})
+		}
 	}
 	provider, err := gooidc.NewProvider(ctx, discoveryURL)
 	if err != nil {
@@ -59,6 +83,33 @@ func NewVerifier(ctx context.Context, cfg Config) (*Verifier, error) {
 	}
 	v := provider.Verifier(&gooidc.Config{ClientID: cfg.ClientID})
 	return &Verifier{verifier: v}, nil
+}
+
+// hostOf extracts the host:port from a URL string, returning "" on parse error.
+func hostOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
+// hostRewriteTransport is an http.RoundTripper that rewrites requests whose
+// host matches `from` to use `to` instead. Used to redirect OIDC JWKS fetches
+// from the public issuer host to an internally-reachable discovery host.
+type hostRewriteTransport struct {
+	from    string // host[:port] to replace, e.g. "localhost:5556"
+	to      string // replacement host[:port], e.g. "dex:5556"
+	wrapped http.RoundTripper
+}
+
+func (t *hostRewriteTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Host == t.from {
+		r2 := r.Clone(r.Context())
+		r2.URL.Host = t.to
+		r = r2
+	}
+	return t.wrapped.RoundTrip(r)
 }
 
 // Verify validates rawToken and returns the extracted Identity.
