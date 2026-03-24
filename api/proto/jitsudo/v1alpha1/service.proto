@@ -26,16 +26,12 @@ service JitsudoService {
 
   // ListRequests returns a filtered list of elevation requests.
   rpc ListRequests(ListRequestsFilter) returns (ListRequestsResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/requests"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/requests"};
   }
 
   // GetRequest returns a single elevation request by ID.
   rpc GetRequest(GetRequestInput) returns (GetRequestResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/requests/{id}"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/requests/{id}"};
   }
 
   // ApproveRequest approves a pending elevation request.
@@ -64,25 +60,19 @@ service JitsudoService {
 
   // GetCredentials retrieves the active credentials for an approved/active request.
   rpc GetCredentials(GetCredentialsInput) returns (GetCredentialsResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/requests/{request_id}/credentials"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/requests/{request_id}/credentials"};
   }
 
   // --- Policies ---
 
   // ListPolicies returns all stored Rego policies.
   rpc ListPolicies(ListPoliciesInput) returns (ListPoliciesResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/policies"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/policies"};
   }
 
   // GetPolicy returns a single policy by ID.
   rpc GetPolicy(GetPolicyInput) returns (GetPolicyResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/policies/{id}"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/policies/{id}"};
   }
 
   // ApplyPolicy creates or updates a policy (upsert by name).
@@ -95,9 +85,7 @@ service JitsudoService {
 
   // DeletePolicy removes a policy by ID.
   rpc DeletePolicy(DeletePolicyInput) returns (DeletePolicyResponse) {
-    option (google.api.http) = {
-      delete: "/api/v1alpha1/policies/{id}"
-    };
+    option (google.api.http) = {delete: "/api/v1alpha1/policies/{id}"};
   }
 
   // EvalPolicy performs a dry-run evaluation of the current policy set.
@@ -112,9 +100,7 @@ service JitsudoService {
 
   // QueryAudit queries the append-only audit log with optional filters.
   rpc QueryAudit(QueryAuditInput) returns (QueryAuditResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/audit"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/audit"};
   }
 
   // --- Admin ---
@@ -141,9 +127,7 @@ service JitsudoService {
 
   // GetPrincipal returns the enrollment record for a principal.
   rpc GetPrincipal(GetPrincipalInput) returns (GetPrincipalResponse) {
-    option (google.api.http) = {
-      get: "/api/v1alpha1/principals/{identity}"
-    };
+    option (google.api.http) = {get: "/api/v1alpha1/principals/{identity}"};
   }
 }
 
