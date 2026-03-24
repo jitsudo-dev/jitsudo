@@ -84,10 +84,10 @@ jobs:
             -o checksums.txt
 
           # sha256sum format: "<hash>  <filename>"
-          export DARWIN_AMD64=$(awk '/jitsudo-darwin-amd64[[:space:]]/{print $1}' checksums.txt)
-          export DARWIN_ARM64=$(awk '/jitsudo-darwin-arm64[[:space:]]/{print $1}' checksums.txt)
-          export LINUX_AMD64=$(awk '/jitsudo-linux-amd64[[:space:]]/{print $1}' checksums.txt)
-          export LINUX_ARM64=$(awk '/jitsudo-linux-arm64[[:space:]]/{print $1}' checksums.txt)
+          export DARWIN_AMD64=$(awk '$NF == "jitsudo-darwin-amd64" {print $1}' checksums.txt)
+          export DARWIN_ARM64=$(awk '$NF == "jitsudo-darwin-arm64" {print $1}' checksums.txt)
+          export LINUX_AMD64=$(awk '$NF == "jitsudo-linux-amd64" {print $1}' checksums.txt)
+          export LINUX_ARM64=$(awk '$NF == "jitsudo-linux-arm64" {print $1}' checksums.txt)
           export VERSION_NUM="${VERSION#v}"
 
           git clone \
