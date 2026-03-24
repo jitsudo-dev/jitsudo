@@ -20,8 +20,9 @@ import (
 // ── mock PolicyEngine ─────────────────────────────────────────────────────────
 
 type mockPolicyEngine struct {
-	reloadErr error
-	evalRaw   func(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error)
+	reloadErr        error
+	compileCheckErr  error
+	evalRaw          func(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error)
 }
 
 func (m *mockPolicyEngine) Reload(_ context.Context) error { return m.reloadErr }
@@ -31,12 +32,23 @@ func (m *mockPolicyEngine) EvalRaw(ctx context.Context, ptype store.PolicyType, 
 	}
 	return false, "", nil
 }
+func (m *mockPolicyEngine) CompileCheck(_ context.Context, _ *store.PolicyRow) error {
+	return m.compileCheckErr
+}
+func (m *mockPolicyEngine) CompileCheckWithout(_ context.Context, _ string, _ store.PolicyType) error {
+	return m.compileCheckErr
+}
 
 // ── mock dataStore ────────────────────────────────────────────────────────────
 
 type mockDataStore struct {
 	listPoliciesRows []*store.PolicyRow
 	listPoliciesErr  error
+	getPolicyRow     *store.PolicyRow
+	getPolicyErr     error
+	upsertPolicyRow  *store.PolicyRow
+	upsertPolicyErr  error
+	deletePolicyErr  error
 }
 
 func (m *mockDataStore) GetRequest(_ context.Context, _ string) (*store.RequestRow, error) {
@@ -49,13 +61,19 @@ func (m *mockDataStore) ListPolicies(_ context.Context, _ *store.PolicyType) ([]
 	return m.listPoliciesRows, m.listPoliciesErr
 }
 func (m *mockDataStore) GetPolicy(_ context.Context, _ string) (*store.PolicyRow, error) {
-	return nil, errors.New("not implemented")
+	return m.getPolicyRow, m.getPolicyErr
 }
-func (m *mockDataStore) UpsertPolicy(_ context.Context, _ *store.PolicyRow) (*store.PolicyRow, error) {
-	return nil, errors.New("not implemented")
+func (m *mockDataStore) UpsertPolicy(_ context.Context, p *store.PolicyRow) (*store.PolicyRow, error) {
+	if m.upsertPolicyErr != nil {
+		return nil, m.upsertPolicyErr
+	}
+	if m.upsertPolicyRow != nil {
+		return m.upsertPolicyRow, nil
+	}
+	return p, nil
 }
 func (m *mockDataStore) DeletePolicy(_ context.Context, _ string) error {
-	return errors.New("not implemented")
+	return m.deletePolicyErr
 }
 func (m *mockDataStore) QueryAuditEvents(_ context.Context, _ store.AuditFilter) ([]*store.AuditEventRow, error) {
 	return nil, errors.New("not implemented")
@@ -205,6 +223,84 @@ func TestSetPrincipalTrustTier_MissingIdentity(t *testing.T) {
 	}
 	if code := status.Code(err); code != codes.InvalidArgument {
 		t.Errorf("got %v, want InvalidArgument", code)
+	}
+}
+
+// ── TestApplyPolicy pre-flight ────────────────────────────────────────────────
+
+// TestApplyPolicy_CompileCheckFails verifies that when the pre-flight compile
+// check fails, ApplyPolicy returns InvalidArgument and does NOT call UpsertPolicy.
+func TestApplyPolicy_CompileCheckFails(t *testing.T) {
+	compileErr := errors.New("rego: multiple default rules in package")
+	ds := &mockDataStore{}
+	h := handlerWithMocks(
+		&mockPolicyEngine{compileCheckErr: compileErr},
+		ds,
+	)
+	_, err := h.ApplyPolicy(authedCtx(), &jitsudov1alpha1.ApplyPolicyInput{
+		Name:    "conflict-policy",
+		Type:    jitsudov1alpha1.PolicyType_POLICY_TYPE_ELIGIBILITY,
+		Rego:    "package jitsudo.eligibility\ndefault allow := false",
+		Enabled: true,
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if code := status.Code(err); code != codes.InvalidArgument {
+		t.Errorf("got %v, want InvalidArgument", code)
+	}
+}
+
+// TestApplyPolicy_CompileCheckPasses verifies that a valid policy is stored
+// when the pre-flight compile check succeeds.
+func TestApplyPolicy_CompileCheckPasses(t *testing.T) {
+	saved := &store.PolicyRow{ID: "pol_01", Name: "good-policy", Enabled: true}
+	ds := &mockDataStore{upsertPolicyRow: saved}
+	h := handlerWithMocks(&mockPolicyEngine{}, ds)
+	resp, err := h.ApplyPolicy(authedCtx(), &jitsudov1alpha1.ApplyPolicyInput{
+		Name:    "good-policy",
+		Type:    jitsudov1alpha1.PolicyType_POLICY_TYPE_ELIGIBILITY,
+		Rego:    "package jitsudo.eligibility\ndefault allow := true",
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.GetPolicy().GetId() != "pol_01" {
+		t.Errorf("policy ID = %q, want %q", resp.GetPolicy().GetId(), "pol_01")
+	}
+}
+
+// ── TestDeletePolicy pre-flight ───────────────────────────────────────────────
+
+// TestDeletePolicy_CompileCheckFails verifies that when the pre-flight compile
+// check fails, DeletePolicy returns InvalidArgument and does NOT delete from DB.
+func TestDeletePolicy_CompileCheckFails(t *testing.T) {
+	compileErr := errors.New("rego: remaining policies conflict")
+	existing := &store.PolicyRow{ID: "pol_01", Type: store.PolicyTypeEligibility}
+	ds := &mockDataStore{getPolicyRow: existing}
+	h := handlerWithMocks(
+		&mockPolicyEngine{compileCheckErr: compileErr},
+		ds,
+	)
+	_, err := h.DeletePolicy(authedCtx(), &jitsudov1alpha1.DeletePolicyInput{Id: "pol_01"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if code := status.Code(err); code != codes.InvalidArgument {
+		t.Errorf("got %v, want InvalidArgument", code)
+	}
+}
+
+// TestDeletePolicy_CompileCheckPasses verifies that a policy is deleted when
+// the pre-flight compile check succeeds.
+func TestDeletePolicy_CompileCheckPasses(t *testing.T) {
+	existing := &store.PolicyRow{ID: "pol_01", Type: store.PolicyTypeEligibility}
+	ds := &mockDataStore{getPolicyRow: existing}
+	h := handlerWithMocks(&mockPolicyEngine{}, ds)
+	_, err := h.DeletePolicy(authedCtx(), &jitsudov1alpha1.DeletePolicyInput{Id: "pol_01"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

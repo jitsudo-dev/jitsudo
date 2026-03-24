@@ -116,20 +116,73 @@ func (e *Engine) EvalRaw(ctx context.Context, ptype store.PolicyType, input map[
 	return e.eval(ctx, q, input)
 }
 
-// buildQuery compiles all enabled policies of ptype into a PreparedEvalQuery.
-func (e *Engine) buildQuery(ctx context.Context, ptype store.PolicyType, query string) (*rego.PreparedEvalQuery, error) {
+// CompileCheck tries to compile the proposed policy alongside the current
+// enabled policies of its type. Returns a non-nil error if the combined set
+// does not compile, so callers can reject the request before writing to the DB.
+func (e *Engine) CompileCheck(ctx context.Context, proposed *store.PolicyRow) error {
+	policies, err := e.store.ListEnabledPoliciesByType(ctx, proposed.Type)
+	if err != nil {
+		return fmt.Errorf("policy: compile check: %w", err)
+	}
+	// Build module map; the proposed policy replaces any same-named existing one.
+	modules := make(map[string]string, len(policies)+1)
+	for _, p := range policies {
+		modules[p.Name+".rego"] = p.Rego
+	}
+	if proposed.Enabled {
+		modules[proposed.Name+".rego"] = proposed.Rego
+	}
+	// Check all queries relevant to this policy type.
+	queries := []string{"data.jitsudo.eligibility.allow"}
+	if proposed.Type == store.PolicyTypeApproval {
+		queries = []string{
+			"data.jitsudo.approval.allow",
+			"data.jitsudo.approval.approver_tier",
+		}
+	}
+	for _, q := range queries {
+		if _, err := compileModules(ctx, proposed.Type, q, modules); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CompileCheckWithout tries to compile the current enabled policies of ptype
+// with the policy identified by removedID excluded. Returns a non-nil error if
+// the remaining set does not compile.
+func (e *Engine) CompileCheckWithout(ctx context.Context, removedID string, ptype store.PolicyType) error {
 	policies, err := e.store.ListEnabledPoliciesByType(ctx, ptype)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("policy: compile check: %w", err)
 	}
-
-	opts := []func(*rego.Rego){rego.Query(query)}
+	modules := make(map[string]string, len(policies))
 	for _, p := range policies {
-		opts = append(opts, rego.Module(p.Name+".rego", p.Rego))
+		if p.ID != removedID {
+			modules[p.Name+".rego"] = p.Rego
+		}
 	}
+	queries := []string{"data.jitsudo.eligibility.allow"}
+	if ptype == store.PolicyTypeApproval {
+		queries = []string{
+			"data.jitsudo.approval.allow",
+			"data.jitsudo.approval.approver_tier",
+		}
+	}
+	for _, q := range queries {
+		if _, err := compileModules(ctx, ptype, q, modules); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	// If no policies are loaded, use a deny-all default so the system is safe.
-	if len(policies) == 0 {
+// compileModules compiles the provided module map for the given query and
+// returns the prepared query. modules maps filename → Rego source. If modules
+// is empty a deny-all default is substituted so the query still compiles.
+func compileModules(ctx context.Context, ptype store.PolicyType, query string, modules map[string]string) (*rego.PreparedEvalQuery, error) {
+	opts := []func(*rego.Rego){rego.Query(query)}
+	if len(modules) == 0 {
 		var pkg string
 		if ptype == store.PolicyTypeEligibility {
 			pkg = "jitsudo.eligibility"
@@ -138,13 +191,33 @@ func (e *Engine) buildQuery(ctx context.Context, ptype store.PolicyType, query s
 		}
 		opts = append(opts, rego.Module("default_deny.rego",
 			fmt.Sprintf("package %s\ndefault allow := false", pkg)))
+	} else {
+		for name, src := range modules {
+			opts = append(opts, rego.Module(name, src))
+		}
 	}
-
 	pq, err := rego.New(opts...).PrepareForEval(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("policy: compile: %w", err)
+	}
+	return &pq, nil
+}
+
+// buildQuery compiles all enabled policies of ptype into a PreparedEvalQuery.
+func (e *Engine) buildQuery(ctx context.Context, ptype store.PolicyType, query string) (*rego.PreparedEvalQuery, error) {
+	policies, err := e.store.ListEnabledPoliciesByType(ctx, ptype)
+	if err != nil {
+		return nil, err
+	}
+	modules := make(map[string]string, len(policies))
+	for _, p := range policies {
+		modules[p.Name+".rego"] = p.Rego
+	}
+	pq, err := compileModules(ctx, ptype, query, modules)
 	if err != nil {
 		return nil, fmt.Errorf("policy: compile %s: %w", ptype, err)
 	}
-	return &pq, nil
+	return pq, nil
 }
 
 // eval runs a prepared query and extracts the allow + reason values.

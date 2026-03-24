@@ -37,6 +37,8 @@ func (h *Handler) isAdmin(identity *auth.Identity) bool {
 type PolicyEngine interface {
 	Reload(ctx context.Context) error
 	EvalRaw(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error)
+	CompileCheck(ctx context.Context, proposed *store.PolicyRow) error
+	CompileCheckWithout(ctx context.Context, removedID string, ptype store.PolicyType) error
 }
 
 // dataStore is the subset of *store.Store methods called by Handler.
@@ -220,6 +222,11 @@ func (h *Handler) ApplyPolicy(ctx context.Context, in *jitsudov1alpha1.ApplyPoli
 		Enabled:     in.GetEnabled(),
 		UpdatedBy:   identity.Email,
 	}
+	// Pre-flight: validate the Rego compiles alongside the current policy set
+	// before writing to the DB, so a compile error never leaves the DB mutated.
+	if err := h.policy.CompileCheck(ctx, row); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "policy compile: %v", err)
+	}
 	saved, err := h.store.UpsertPolicy(ctx, row)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "apply policy: %v", err)
@@ -234,6 +241,15 @@ func (h *Handler) ApplyPolicy(ctx context.Context, in *jitsudov1alpha1.ApplyPoli
 func (h *Handler) DeletePolicy(ctx context.Context, in *jitsudov1alpha1.DeletePolicyInput) (*jitsudov1alpha1.DeletePolicyResponse, error) {
 	if auth.FromContext(ctx) == nil {
 		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	// Fetch the policy to learn its type for the pre-flight compile check.
+	existing, err := h.store.GetPolicy(ctx, in.GetId())
+	if err != nil {
+		return nil, storeErr(err)
+	}
+	// Pre-flight: validate remaining policies still compile after removal.
+	if err := h.policy.CompileCheckWithout(ctx, in.GetId(), existing.Type); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "policy compile: %v", err)
 	}
 	if err := h.store.DeletePolicy(ctx, in.GetId()); err != nil {
 		return nil, storeErr(err)
