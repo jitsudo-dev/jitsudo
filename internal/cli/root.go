@@ -75,6 +75,14 @@ Documentation: https://jitsudo.dev/docs`,
 // with any command-line flag overrides.
 func newClient(ctx context.Context) (*client.Client, error) {
 	serverURL := flags.serverURL
+
+	// Fall back to JITSUDO_SERVER env var or config file key "server".
+	// initConfig already called viper.SetEnvPrefix("JITSUDO") + AutomaticEnv(),
+	// so viper.GetString("server") automatically reads JITSUDO_SERVER.
+	if serverURL == "" {
+		serverURL = viper.GetString("server")
+	}
+
 	token := flags.token
 
 	// Fall back to stored credentials for any unset values.
@@ -89,6 +97,10 @@ func newClient(ctx context.Context) (*client.Client, error) {
 		if token == "" {
 			token = creds.Token
 		}
+	}
+
+	if serverURL == "" {
+		return nil, fmt.Errorf("no server URL configured — pass --server <URL>, set JITSUDO_SERVER=<URL>, or add 'server: <URL>' to ~/.jitsudo/config.yaml")
 	}
 
 	cfg := client.Config{
