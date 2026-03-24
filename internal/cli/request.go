@@ -79,16 +79,14 @@ Upon approval, credentials are issued for the specified duration and automatical
 	cmd.Flags().StringVar(&provider, "provider", "", "Cloud provider: aws, azure, gcp, kubernetes (required)")
 	cmd.Flags().StringVar(&role, "role", "", "Role or permission set to request (required)")
 	cmd.Flags().StringVar(&scope, "scope", "", "Resource scope: AWS account ID, GCP project, K8s namespace (required)")
-	cmd.Flags().StringVar(&duration, "duration", "", "Elevation duration, e.g. 1h, 30m (required)")
-	cmd.Flags().StringVar(&reason, "reason", "", "Justification for the request (required)")
+	cmd.Flags().StringVar(&duration, "duration", "1h", "Elevation duration, e.g. 1h, 30m (default: 1h)")
+	cmd.Flags().StringVar(&reason, "reason", "", "Justification for the request")
 	cmd.Flags().BoolVar(&breakGlass, "break-glass", false, "Emergency break-glass mode: bypass approval with immediate alerts")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Block until the request is approved or denied")
 
 	_ = cmd.MarkFlagRequired("provider")
 	_ = cmd.MarkFlagRequired("role")
 	_ = cmd.MarkFlagRequired("scope")
-	_ = cmd.MarkFlagRequired("duration")
-	_ = cmd.MarkFlagRequired("reason")
 
 	return cmd
 }
