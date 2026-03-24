@@ -15,31 +15,31 @@ import (
 
 // requestRow is the JSON/YAML representation of an ElevationRequest.
 type requestRow struct {
-	ID               string `json:"id" yaml:"id"`
-	State            string `json:"state" yaml:"state"`
+	ID                string `json:"id" yaml:"id"`
+	State             string `json:"state" yaml:"state"`
 	RequesterIdentity string `json:"requester_identity" yaml:"requester_identity"`
-	Provider         string `json:"provider" yaml:"provider"`
-	Role             string `json:"role" yaml:"role"`
-	ResourceScope    string `json:"resource_scope" yaml:"resource_scope"`
-	DurationSeconds  int64  `json:"duration_seconds" yaml:"duration_seconds"`
-	Reason           string `json:"reason" yaml:"reason"`
-	ApproverIdentity string `json:"approver_identity,omitempty" yaml:"approver_identity,omitempty"`
-	ApproverComment  string `json:"approver_comment,omitempty" yaml:"approver_comment,omitempty"`
-	ExpiresAt        string `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
+	Provider          string `json:"provider" yaml:"provider"`
+	Role              string `json:"role" yaml:"role"`
+	ResourceScope     string `json:"resource_scope" yaml:"resource_scope"`
+	DurationSeconds   int64  `json:"duration_seconds" yaml:"duration_seconds"`
+	Reason            string `json:"reason" yaml:"reason"`
+	ApproverIdentity  string `json:"approver_identity,omitempty" yaml:"approver_identity,omitempty"`
+	ApproverComment   string `json:"approver_comment,omitempty" yaml:"approver_comment,omitempty"`
+	ExpiresAt         string `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
 }
 
 func requestToRow(r *jitsudov1alpha1.ElevationRequest) requestRow {
 	row := requestRow{
-		ID:               r.GetId(),
-		State:            stateString(r.GetState()),
+		ID:                r.GetId(),
+		State:             stateString(r.GetState()),
 		RequesterIdentity: r.GetRequesterIdentity(),
-		Provider:         r.GetProvider(),
-		Role:             r.GetRole(),
-		ResourceScope:    r.GetResourceScope(),
-		DurationSeconds:  r.GetDurationSeconds(),
-		Reason:           r.GetReason(),
-		ApproverIdentity: r.GetApproverIdentity(),
-		ApproverComment:  r.GetApproverComment(),
+		Provider:          r.GetProvider(),
+		Role:              r.GetRole(),
+		ResourceScope:     r.GetResourceScope(),
+		DurationSeconds:   r.GetDurationSeconds(),
+		Reason:            r.GetReason(),
+		ApproverIdentity:  r.GetApproverIdentity(),
+		ApproverComment:   r.GetApproverComment(),
 	}
 	if r.GetExpiresAt() != nil {
 		row.ExpiresAt = r.GetExpiresAt().AsTime().UTC().Format(time.RFC3339)
