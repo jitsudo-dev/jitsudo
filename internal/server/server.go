@@ -32,6 +32,7 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/server/audit"
 	"github.com/jitsudo-dev/jitsudo/internal/server/auth"
 	"github.com/jitsudo-dev/jitsudo/internal/server/mcp"
+	"github.com/jitsudo-dev/jitsudo/internal/server/mcpagent"
 	"github.com/jitsudo-dev/jitsudo/internal/server/notifications"
 	"github.com/jitsudo-dev/jitsudo/internal/server/policy"
 	"github.com/jitsudo-dev/jitsudo/internal/server/workflow"
@@ -66,6 +67,12 @@ type Config struct {
 	// MCPAgentIdentity is the name recorded in the audit log for MCP decisions.
 	// Defaults to "mcp-agent" if empty.
 	MCPAgentIdentity string
+
+	// MCPAgentAddr is the listen address for the MCP agent-requestor server.
+	// When non-empty a second http.Server is started on this address exposing
+	// POST /mcp/agent/messages and GET /mcp/agent/sse.
+	// Default ":8081"; set to "" to disable.
+	MCPAgentAddr string
 
 	// AdminEmails lists email addresses that are granted admin privileges
 	// regardless of group membership. Useful when the OIDC provider does not
@@ -133,8 +140,20 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("server: policy engine reload: %w", err)
 	}
 
+	// ── MCP agent broker (must be built before the dispatcher) ───────────────
+	// The broker is appended to the notifier list so it receives every workflow
+	// event. It must exist before NewDispatcher is called because the dispatcher
+	// captures the notifier list at construction time.
+	var agentBroker *mcpagent.Broker
+	if s.cfg.MCPAgentAddr != "" {
+		agentBroker = mcpagent.NewBroker(s.store)
+	}
+
 	// ── Notification dispatcher ───────────────────────────────────────────────
 	var notifiers []notifications.Notifier
+	if agentBroker != nil {
+		notifiers = append(notifiers, agentBroker)
+	}
 	if cfg := s.cfg.Notifications.Slack; cfg != nil && cfg.WebhookURL != "" {
 		notifiers = append(notifiers, notifications.NewSlackNotifier(*cfg))
 	}
@@ -262,8 +281,28 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}()
 
+	// ── MCP agent HTTP server ─────────────────────────────────────────────────
+	var mcpAgentHTTP *http.Server
+	mcpAgentErrC := make(chan error, 1)
+	if s.cfg.MCPAgentAddr != "" {
+		agentSrv := mcpagent.New(workflowEngine, s.store, verifier, agentBroker)
+		mcpAgentHTTP = &http.Server{
+			Addr:    s.cfg.MCPAgentAddr,
+			Handler: agentSrv.Handler(),
+		}
+		go func() {
+			log.Info().Str("addr", s.cfg.MCPAgentAddr).Msg("jitsudod MCP agent server starting")
+			if err := mcpAgentHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				mcpAgentErrC <- fmt.Errorf("MCP agent server error: %w", err)
+			}
+		}()
+	}
+
 	// ── Expiry sweeper ────────────────────────────────────────────────────────
 	go workflowEngine.RunExpirySweeper(ctx, 30*time.Second)
+
+	// ── Pending timeout sweeper ───────────────────────────────────────────────
+	go workflowEngine.RunPendingTimeoutSweeper(ctx, 30*time.Second)
 
 	// ── Periodic policy sync ──────────────────────────────────────────────────
 	// Each instance independently re-reads policies from the database every 30s,
@@ -292,10 +331,15 @@ func (s *Server) Start(ctx context.Context) error {
 		s.grpcServer.GracefulStop()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer shutdownCancel()
+		if mcpAgentHTTP != nil {
+			_ = mcpAgentHTTP.Shutdown(shutdownCtx)
+		}
 		return s.httpServer.Shutdown(shutdownCtx)
 	case err := <-grpcErrC:
 		return err
 	case err := <-httpErrC:
+		return err
+	case err := <-mcpAgentErrC:
 		return err
 	}
 }
