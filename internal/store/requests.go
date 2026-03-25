@@ -43,8 +43,13 @@ type RequestRow struct {
 	RevokeToken       string
 	CredentialsJSON   map[string]string // nil until ACTIVE
 	AIReasoningJSON   string            // populated by MCP approver for Tier 2 decisions
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// PendingTimeoutAt and PendingTimeoutAction support policy-configured timeouts
+	// for pending requests. These are general lifecycle fields — not MCP-specific.
+	// NULL means no timeout applies (request waits indefinitely for approval).
+	PendingTimeoutAt     *time.Time
+	PendingTimeoutAction string // "deny" | "auto_approve" | "escalate" | ""
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // RequestUpdate holds the fields that can be set during a state transition.
@@ -71,14 +76,22 @@ func (s *Store) CreateRequest(ctx context.Context, req *RequestRow) error {
 	if tier == "" {
 		tier = "human"
 	}
+	var timeoutAction *string
+	if req.PendingTimeoutAction != "" {
+		timeoutAction = &req.PendingTimeoutAction
+	}
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO elevation_requests
 			(id, state, requester_identity, provider, role, resource_scope,
-			 duration_seconds, reason, break_glass, metadata, approver_tier, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+			 duration_seconds, reason, break_glass, metadata, approver_tier,
+			 pending_timeout_at, pending_timeout_action,
+			 created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		req.ID, string(req.State), req.RequesterIdentity, req.Provider,
 		req.Role, req.ResourceScope, req.DurationSeconds, req.Reason,
-		req.BreakGlass, metaJSON, tier, req.CreatedAt, req.UpdatedAt,
+		req.BreakGlass, metaJSON, tier,
+		req.PendingTimeoutAt, timeoutAction,
+		req.CreatedAt, req.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("store: CreateRequest: %w", err)
@@ -94,7 +107,9 @@ func (s *Store) GetRequest(ctx context.Context, id string) (*RequestRow, error) 
 		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       COALESCE(ai_reasoning_json,''), created_at, updated_at
+		       COALESCE(ai_reasoning_json,''),
+		       pending_timeout_at, COALESCE(pending_timeout_action,''),
+		       created_at, updated_at
 		FROM elevation_requests WHERE id = $1`, id)
 	return scanRequest(row)
 }
@@ -107,7 +122,9 @@ func (s *Store) ListRequests(ctx context.Context, f ListFilter) ([]*RequestRow, 
 		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       COALESCE(ai_reasoning_json,''), created_at, updated_at
+		       COALESCE(ai_reasoning_json,''),
+		       pending_timeout_at, COALESCE(pending_timeout_action,''),
+		       created_at, updated_at
 		FROM elevation_requests WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -168,7 +185,9 @@ func (s *Store) ListPendingAIReview(ctx context.Context) ([]*RequestRow, error) 
 		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       COALESCE(ai_reasoning_json,''), created_at, updated_at
+		       COALESCE(ai_reasoning_json,''),
+		       pending_timeout_at, COALESCE(pending_timeout_action,''),
+		       created_at, updated_at
 		FROM elevation_requests
 		WHERE state = 'PENDING' AND approver_tier = 'ai_review'
 		ORDER BY created_at ASC LIMIT 100`)
@@ -197,7 +216,9 @@ func (s *Store) ListActiveExpired(ctx context.Context) ([]*RequestRow, error) {
 		       COALESCE(approver_tier,'human'),
 		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
 		       expires_at, COALESCE(revoke_token,''), credentials_json,
-		       COALESCE(ai_reasoning_json,''), created_at, updated_at
+		       COALESCE(ai_reasoning_json,''),
+		       pending_timeout_at, COALESCE(pending_timeout_action,''),
+		       created_at, updated_at
 		FROM elevation_requests
 		WHERE state = 'ACTIVE' AND expires_at <= NOW()`)
 	if err != nil {
@@ -280,9 +301,97 @@ func (s *Store) TransitionRequest(ctx context.Context, id string, fromState, toS
 	return s.GetRequest(ctx, id)
 }
 
+// ListActiveGrantsByIdentity returns all ACTIVE grants for a given requester identity
+// whose expiry is in the future (or have no expiry set). Used by the MCP agent
+// list_my_active_grants tool.
+func (s *Store) ListActiveGrantsByIdentity(ctx context.Context, identity string) ([]*RequestRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, state, requester_identity, provider, role, resource_scope,
+		       duration_seconds, reason, break_glass, metadata,
+		       COALESCE(approver_tier,'human'),
+		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
+		       expires_at, COALESCE(revoke_token,''), credentials_json,
+		       COALESCE(ai_reasoning_json,''),
+		       pending_timeout_at, COALESCE(pending_timeout_action,''),
+		       created_at, updated_at
+		FROM elevation_requests
+		WHERE state = 'ACTIVE'
+		  AND requester_identity = $1
+		  AND (expires_at IS NULL OR expires_at > NOW())
+		ORDER BY created_at DESC LIMIT 50`, identity)
+	if err != nil {
+		return nil, fmt.Errorf("store: ListActiveGrantsByIdentity: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*RequestRow
+	for rows.Next() {
+		r, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListPendingTimedOut returns PENDING requests whose pending_timeout_at has passed.
+// Used by the pending timeout sweeper.
+func (s *Store) ListPendingTimedOut(ctx context.Context) ([]*RequestRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, state, requester_identity, provider, role, resource_scope,
+		       duration_seconds, reason, break_glass, metadata,
+		       COALESCE(approver_tier,'human'),
+		       COALESCE(approver_identity,''), COALESCE(approver_comment,''),
+		       expires_at, COALESCE(revoke_token,''), credentials_json,
+		       COALESCE(ai_reasoning_json,''),
+		       pending_timeout_at, COALESCE(pending_timeout_action,''),
+		       created_at, updated_at
+		FROM elevation_requests
+		WHERE state = 'PENDING'
+		  AND pending_timeout_at IS NOT NULL
+		  AND pending_timeout_at <= NOW()
+		ORDER BY pending_timeout_at ASC LIMIT 100`)
+	if err != nil {
+		return nil, fmt.Errorf("store: ListPendingTimedOut: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*RequestRow
+	for rows.Next() {
+		r, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SetPendingTimeout sets the timeout deadline and action for a PENDING request.
+// Called by CreateMCPRequest (and potentially CreateRequest) when the policy
+// specifies a timeout_seconds value.
+func (s *Store) SetPendingTimeout(ctx context.Context, id string, timeoutAt time.Time, action string) error {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE elevation_requests
+		SET pending_timeout_at = $2, pending_timeout_action = $3, updated_at = NOW()
+		WHERE id = $1 AND state = 'PENDING'`, id, timeoutAt, action)
+	if err != nil {
+		return fmt.Errorf("store: SetPendingTimeout: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // sweepLockKey is the PostgreSQL advisory lock key reserved for the expiry sweeper.
 // The value is fixed and must be identical across all jitsudod instances.
 const sweepLockKey = int64(7278657000) // "jitsudo\0" packed, avoids collision with ad-hoc keys
+
+// pendingTimeoutLockKey is the advisory lock key for the pending timeout sweeper.
+// Distinct from sweepLockKey so the two sweepers do not block each other.
+const pendingTimeoutLockKey = int64(7278657001)
 
 // TryAcquireSweepLock attempts a non-blocking session-level PostgreSQL advisory lock.
 // Only one jitsudod instance holds this lock at a time, ensuring the expiry sweeper
@@ -313,6 +422,30 @@ func (s *Store) TryAcquireSweepLock(ctx context.Context) (bool, func(), error) {
 	return true, release, nil
 }
 
+// TryAcquirePendingTimeoutLock is the same pattern as TryAcquireSweepLock but
+// uses pendingTimeoutLockKey so the pending timeout sweeper and the expiry
+// sweeper can run concurrently on different instances without blocking each other.
+func (s *Store) TryAcquirePendingTimeoutLock(ctx context.Context) (bool, func(), error) {
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return false, func() {}, fmt.Errorf("store: pending timeout lock acquire conn: %w", err)
+	}
+	var acquired bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, pendingTimeoutLockKey).Scan(&acquired); err != nil {
+		conn.Release()
+		return false, func() {}, fmt.Errorf("store: pg_try_advisory_lock (pending timeout): %w", err)
+	}
+	if !acquired {
+		conn.Release()
+		return false, func() {}, nil
+	}
+	release := func() {
+		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, pendingTimeoutLockKey)
+		conn.Release()
+	}
+	return true, release, nil
+}
+
 // nullableJSON returns nil if the input is empty, otherwise the raw bytes.
 func nullableJSON(b []byte) interface{} {
 	if len(b) == 0 {
@@ -336,6 +469,7 @@ func scanRequest(row interface {
 		&r.ApproverIdentity, &r.ApproverComment,
 		&r.ExpiresAt, &r.RevokeToken, &credJSON,
 		&r.AIReasoningJSON,
+		&r.PendingTimeoutAt, &r.PendingTimeoutAction,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
