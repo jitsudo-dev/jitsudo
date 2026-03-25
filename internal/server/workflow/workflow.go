@@ -40,6 +40,10 @@ type engineStore interface {
 	SetApproverTier(ctx context.Context, id string, tier string) error
 	ListActiveExpired(ctx context.Context) ([]*store.RequestRow, error)
 	TryAcquireSweepLock(ctx context.Context) (bool, func(), error)
+	// MCP agent requestor surface
+	ListActiveGrantsByIdentity(ctx context.Context, identity string) ([]*store.RequestRow, error)
+	ListPendingTimedOut(ctx context.Context) ([]*store.RequestRow, error)
+	TryAcquirePendingTimeoutLock(ctx context.Context) (bool, func(), error)
 }
 
 // auditAppender is the subset of *audit.Logger used by the Engine.
@@ -820,5 +824,234 @@ func (e *Engine) sweepExpired(ctx context.Context) {
 		})
 
 		log.Info().Str("request_id", req.ID).Msg("grant expired")
+	}
+}
+
+// MCPRequestInput carries the parameters from the MCP agent's request_access tool call.
+// Action maps to the role column (e.g. "s3:GetObject"); Resource maps to resource_scope
+// (e.g. "arn:aws:s3:::my-bucket/*"). Additional MCP-specific fields are stored in Metadata.
+type MCPRequestInput struct {
+	Action          string
+	Resource        string
+	DurationSeconds int64
+	Reason          string
+	TicketRef       string
+}
+
+// inferProviderFromResource returns the provider name inferred from the resource identifier.
+// Returns "mock" for MVP; TODO: route by ARN prefix (aws, gcp, azure) in a future milestone.
+func inferProviderFromResource(_ string) string {
+	return "mock" // TODO: route by ARN prefix
+}
+
+// CreateMCPRequest creates a PENDING elevation request from the MCP agent requestor surface.
+// It maps action→role and resource→resource_scope using the unified request model, stores
+// additional MCP fields in the metadata JSONB column, and sets pending_timeout_at /
+// pending_timeout_action from policy evaluation.
+func (e *Engine) CreateMCPRequest(ctx context.Context, identity *auth.Identity, input MCPRequestInput) (*store.RequestRow, error) {
+	provider := inferProviderFromResource(input.Resource)
+
+	p := e.registry.Get(provider)
+	if p == nil {
+		return nil, fmt.Errorf("workflow: unknown provider %q (inferred from resource)", provider)
+	}
+
+	_ = e.store.UpsertPrincipalLastSeen(ctx, identity.Email)
+
+	// Build a wrapper so we can call the existing policy evaluation methods.
+	policyInput := &jitsudov1alpha1.CreateRequestInput{
+		Provider:        provider,
+		Role:            input.Action,
+		ResourceScope:   input.Resource,
+		DurationSeconds: input.DurationSeconds,
+	}
+
+	allowed, reason, err := e.policy.EvalEligibility(ctx, identity, policyInput)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: mcp eligibility eval: %w", err)
+	}
+	if !allowed {
+		if reason == "" {
+			reason = "policy denied the request"
+		}
+		return nil, fmt.Errorf("workflow: not eligible: %s", reason)
+	}
+
+	tier, err := e.policy.EvalApprovalTier(ctx, identity, policyInput)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: mcp approval tier eval: %w", err)
+	}
+
+	timeoutSecs, err := e.policy.EvalTimeoutSeconds(ctx, identity, provider, input.Action, input.Resource, input.DurationSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: mcp timeout_seconds eval: %w", err)
+	}
+	timeoutAction, err := e.policy.EvalTimeoutAction(ctx, identity, provider, input.Action, input.Resource, input.DurationSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: mcp timeout_action eval: %w", err)
+	}
+
+	now := time.Now().UTC()
+	meta := map[string]string{"action": input.Action}
+	if input.TicketRef != "" {
+		meta["ticket_ref"] = input.TicketRef
+	}
+
+	req := &store.RequestRow{
+		ID:                "req_" + ulid.Make().String(),
+		State:             store.StatePending,
+		RequesterIdentity: identity.Email,
+		Provider:          provider,
+		Role:              input.Action,
+		ResourceScope:     input.Resource,
+		DurationSeconds:   input.DurationSeconds,
+		Reason:            input.Reason,
+		BreakGlass:        false,
+		Metadata:          meta,
+		ApproverTier:      tier,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if timeoutSecs > 0 {
+		t := now.Add(time.Duration(timeoutSecs) * time.Second)
+		req.PendingTimeoutAt = &t
+		req.PendingTimeoutAction = timeoutAction
+	}
+
+	if err := e.store.CreateRequest(ctx, req); err != nil {
+		return nil, fmt.Errorf("workflow: mcp create request: %w", err)
+	}
+
+	e.appendAudit(ctx, audit.Entry{
+		ActorIdentity: identity.Email,
+		Action:        audit.ActionRequestCreated,
+		RequestID:     req.ID,
+		Provider:      req.Provider,
+		ResourceScope: req.ResourceScope,
+		Outcome:       audit.OutcomeSuccess,
+		DetailsJSON:   `{"requestor_surface":"mcp","principal":{"type":"agent"}}`,
+	})
+
+	if tier == "auto" {
+		return e.autoApproveRequest(ctx, identity, req, p)
+	}
+
+	e.notifications.Notify(ctx, notifications.Event{
+		Type:      notifications.EventRequestCreated,
+		RequestID: req.ID,
+		Actor:     identity.Email,
+		Provider:  req.Provider,
+		Role:      req.Role,
+		Scope:     req.ResourceScope,
+		Reason:    req.Reason,
+	})
+
+	return req, nil
+}
+
+// RunPendingTimeoutSweeper runs in a goroutine and handles PENDING requests whose
+// pending_timeout_at deadline has passed. Mirrors RunExpirySweeper.
+// It exits when ctx is cancelled.
+func (e *Engine) RunPendingTimeoutSweeper(ctx context.Context, interval time.Duration) {
+	log.Info().Dur("interval", interval).Msg("pending timeout sweeper started")
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.sweepPendingTimedOut(ctx)
+		}
+	}
+}
+
+func (e *Engine) sweepPendingTimedOut(ctx context.Context) {
+	acquired, release, err := e.store.TryAcquirePendingTimeoutLock(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("pending timeout sweeper: advisory lock error")
+		return
+	}
+	if !acquired {
+		return
+	}
+	defer release()
+
+	timedOut, err := e.store.ListPendingTimedOut(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("pending timeout sweeper: list failed")
+		return
+	}
+
+	for _, req := range timedOut {
+		switch req.PendingTimeoutAction {
+		case "auto_approve":
+			p := e.registry.Get(req.Provider)
+			if p == nil {
+				log.Error().Str("request_id", req.ID).Str("provider", req.Provider).
+					Msg("pending timeout sweeper: provider not found for auto_approve")
+				continue
+			}
+			syntheticIdentity := &auth.Identity{Email: req.RequesterIdentity}
+			if _, err := e.autoApproveRequest(ctx, syntheticIdentity, req, p); err != nil {
+				log.Error().Err(err).Str("request_id", req.ID).Msg("pending timeout sweeper: auto_approve failed")
+			} else {
+				log.Info().Str("request_id", req.ID).Msg("pending timeout: auto-approved")
+			}
+
+		case "escalate":
+			e.appendAudit(ctx, audit.Entry{
+				ActorIdentity: "system",
+				Action:        audit.ActionRequestAIEscalated,
+				RequestID:     req.ID,
+				Provider:      req.Provider,
+				ResourceScope: req.ResourceScope,
+				Outcome:       audit.OutcomeSuccess,
+				DetailsJSON:   `{"reason":"pending_timeout_escalate"}`,
+			})
+			if err := e.store.SetApproverTier(ctx, req.ID, "human"); err != nil {
+				log.Error().Err(err).Str("request_id", req.ID).Msg("pending timeout sweeper: escalate set tier failed")
+				continue
+			}
+			e.notifications.Notify(ctx, notifications.Event{
+				Type:      notifications.EventAIEscalated,
+				RequestID: req.ID,
+				Actor:     "system",
+				Provider:  req.Provider,
+				Role:      req.Role,
+				Scope:     req.ResourceScope,
+				Reason:    "pending_timeout_escalate",
+			})
+			log.Info().Str("request_id", req.ID).Msg("pending timeout: escalated to human")
+
+		default: // "deny" or any unrecognised value — safe default is deny
+			e.appendAudit(ctx, audit.Entry{
+				ActorIdentity: "system",
+				Action:        audit.ActionRequestDenied,
+				RequestID:     req.ID,
+				Provider:      req.Provider,
+				ResourceScope: req.ResourceScope,
+				Outcome:       audit.OutcomeSuccess,
+				DetailsJSON:   `{"reason":"pending_timeout_deny"}`,
+			})
+			if _, err := e.store.TransitionRequest(ctx, req.ID,
+				store.StatePending, store.StateRejected,
+				store.RequestUpdate{ApproverComment: "Denied by pending timeout policy"},
+			); err != nil {
+				log.Error().Err(err).Str("request_id", req.ID).Msg("pending timeout sweeper: deny transition failed")
+				continue
+			}
+			e.notifications.Notify(ctx, notifications.Event{
+				Type:      notifications.EventDenied,
+				RequestID: req.ID,
+				Actor:     "system",
+				Provider:  req.Provider,
+				Role:      req.Role,
+				Scope:     req.ResourceScope,
+				Reason:    "pending timeout expired",
+			})
+			log.Info().Str("request_id", req.ID).Msg("pending timeout: denied")
+		}
 	}
 }

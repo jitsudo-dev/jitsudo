@@ -135,6 +135,18 @@ func (s *stubStore) TryAcquireSweepLock(_ context.Context) (bool, func(), error)
 	return s.sweepLockAcquired, func() {}, nil
 }
 
+func (s *stubStore) ListActiveGrantsByIdentity(_ context.Context, _ string) ([]*store.RequestRow, error) {
+	return nil, nil
+}
+
+func (s *stubStore) ListPendingTimedOut(_ context.Context) ([]*store.RequestRow, error) {
+	return nil, nil
+}
+
+func (s *stubStore) TryAcquirePendingTimeoutLock(_ context.Context) (bool, func(), error) {
+	return true, func() {}, nil
+}
+
 // stubAudit records all Append calls for assertion.
 type stubAudit struct {
 	mu      sync.Mutex
