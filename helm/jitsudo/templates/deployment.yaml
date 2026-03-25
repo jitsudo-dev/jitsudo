@@ -77,6 +77,10 @@ spec:
               value: {{ .Values.config.mcp.token | quote }}
             {{- end }}
             {{- end }}
+            {{- if .Values.config.mcpAgent.enabled }}
+            - name: JITSUDOD_MCP_AGENT_ADDR
+              value: {{ .Values.config.mcpAgent.addr | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ trimPrefix ":" .Values.config.server.httpAddr | int }}
@@ -84,6 +88,11 @@ spec:
             - name: grpc
               containerPort: {{ trimPrefix ":" .Values.config.server.grpcAddr | int }}
               protocol: TCP
+            {{- if .Values.config.mcpAgent.enabled }}
+            - name: mcp-agent
+              containerPort: {{ trimPrefix ":" .Values.config.mcpAgent.addr | int }}
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
