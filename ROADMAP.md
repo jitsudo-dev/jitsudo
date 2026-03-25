@@ -52,7 +52,7 @@ Goal: A minimal end-to-end flow working locally against the mock provider.
 - [x] `jitsudo server` admin subcommands (status, version, reload-policies)
 - [x] Comprehensive documentation site (jitsudo.dev)
 
-## Milestone 4: Architecture (Current)
+## Milestone 4: Architecture ✓
 
 Goal: Implement the three-tier approval model and the architectural decisions captured in the design review. This milestone delivers the complete, production-grade access control model.
 
