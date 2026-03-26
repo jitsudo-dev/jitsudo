@@ -40,8 +40,6 @@ type engineStore interface {
 	SetApproverTier(ctx context.Context, id string, tier string) error
 	ListActiveExpired(ctx context.Context) ([]*store.RequestRow, error)
 	TryAcquireSweepLock(ctx context.Context) (bool, func(), error)
-	// MCP agent requestor surface
-	ListActiveGrantsByIdentity(ctx context.Context, identity string) ([]*store.RequestRow, error)
 	ListPendingTimedOut(ctx context.Context) ([]*store.RequestRow, error)
 	TryAcquirePendingTimeoutLock(ctx context.Context) (bool, func(), error)
 }
