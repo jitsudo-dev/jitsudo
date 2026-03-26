@@ -14,6 +14,40 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/store"
 )
 
+// newEngineWithTimeoutSecondsPolicy creates an Engine whose timeoutSecondsQuery
+// is compiled from the provided Rego string. No database is required.
+func newEngineWithTimeoutSecondsPolicy(t *testing.T, regoStr string) *Engine {
+	t.Helper()
+	opts := []func(*rego.Rego){
+		rego.Query("data.jitsudo.approval.timeout_seconds"),
+		rego.Module("test.rego", regoStr),
+	}
+	pq, err := rego.New(opts...).PrepareForEval(context.Background())
+	if err != nil {
+		t.Fatalf("PrepareForEval: %v", err)
+	}
+	e := &Engine{}
+	e.timeoutSecondsQuery = &pq
+	return e
+}
+
+// newEngineWithTimeoutActionPolicy creates an Engine whose timeoutActionQuery
+// is compiled from the provided Rego string. No database is required.
+func newEngineWithTimeoutActionPolicy(t *testing.T, regoStr string) *Engine {
+	t.Helper()
+	opts := []func(*rego.Rego){
+		rego.Query("data.jitsudo.approval.timeout_action"),
+		rego.Module("test.rego", regoStr),
+	}
+	pq, err := rego.New(opts...).PrepareForEval(context.Background())
+	if err != nil {
+		t.Fatalf("PrepareForEval: %v", err)
+	}
+	e := &Engine{}
+	e.timeoutActionQuery = &pq
+	return e
+}
+
 // newEngineWithTierPolicy creates an Engine whose approvalTierQuery is compiled
 // from the provided Rego string. No database is required.
 func newEngineWithTierPolicy(t *testing.T, regoStr string) *Engine {
@@ -428,5 +462,129 @@ allow if {
 	}
 	if allowed {
 		t.Error("expected denied for wrong group, got allowed")
+	}
+}
+
+// ── EvalTimeoutSeconds ────────────────────────────────────────────────────────
+
+func TestEvalTimeoutSeconds_NilQuery(t *testing.T) {
+	e := &Engine{} // timeoutSecondsQuery is nil
+	secs, err := e.EvalTimeoutSeconds(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutSeconds: %v", err)
+	}
+	if secs != 0 {
+		t.Errorf("secs = %d, want 0 for nil query", secs)
+	}
+}
+
+func TestEvalTimeoutSeconds_ReturnsValue(t *testing.T) {
+	e := newEngineWithTimeoutSecondsPolicy(t, `
+package jitsudo.approval
+import rego.v1
+
+timeout_seconds := 300
+`)
+	secs, err := e.EvalTimeoutSeconds(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutSeconds: %v", err)
+	}
+	if secs != 300 {
+		t.Errorf("secs = %d, want 300", secs)
+	}
+}
+
+func TestEvalTimeoutSeconds_RuleNotDefined(t *testing.T) {
+	// Policy has no timeout_seconds rule — the query result is undefined.
+	e := newEngineWithTimeoutSecondsPolicy(t, `
+package jitsudo.approval
+import rego.v1
+
+default approver_tier := "human"
+`)
+	secs, err := e.EvalTimeoutSeconds(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutSeconds: %v", err)
+	}
+	if secs != 0 {
+		t.Errorf("secs = %d, want 0 when rule is not defined", secs)
+	}
+}
+
+// ── EvalTimeoutAction ─────────────────────────────────────────────────────────
+
+func TestEvalTimeoutAction_NilQuery(t *testing.T) {
+	e := &Engine{} // timeoutActionQuery is nil
+	action, err := e.EvalTimeoutAction(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutAction: %v", err)
+	}
+	if action != "deny" {
+		t.Errorf("action = %q, want deny for nil query", action)
+	}
+}
+
+func TestEvalTimeoutAction_Deny(t *testing.T) {
+	e := newEngineWithTimeoutActionPolicy(t, `
+package jitsudo.approval
+import rego.v1
+
+timeout_action := "deny"
+`)
+	action, err := e.EvalTimeoutAction(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutAction: %v", err)
+	}
+	if action != "deny" {
+		t.Errorf("action = %q, want deny", action)
+	}
+}
+
+func TestEvalTimeoutAction_AutoApprove(t *testing.T) {
+	e := newEngineWithTimeoutActionPolicy(t, `
+package jitsudo.approval
+import rego.v1
+
+timeout_action := "auto_approve"
+`)
+	action, err := e.EvalTimeoutAction(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutAction: %v", err)
+	}
+	if action != "auto_approve" {
+		t.Errorf("action = %q, want auto_approve", action)
+	}
+}
+
+func TestEvalTimeoutAction_Escalate(t *testing.T) {
+	e := newEngineWithTimeoutActionPolicy(t, `
+package jitsudo.approval
+import rego.v1
+
+timeout_action := "escalate"
+`)
+	action, err := e.EvalTimeoutAction(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutAction: %v", err)
+	}
+	if action != "escalate" {
+		t.Errorf("action = %q, want escalate", action)
+	}
+}
+
+func TestEvalTimeoutAction_UnrecognizedValue(t *testing.T) {
+	e := newEngineWithTimeoutActionPolicy(t, `
+package jitsudo.approval
+import rego.v1
+
+timeout_action := "do_something_custom"
+`)
+	action, err := e.EvalTimeoutAction(context.Background(), testIdentity(), "aws", "admin", "123456789012", 3600)
+	if err != nil {
+		t.Fatalf("EvalTimeoutAction: %v", err)
+	}
+	// Unrecognized values must fall back to the safe default.
+	if action != "deny" {
+		t.Errorf("action = %q, want deny for unrecognized value", action)
 	}
 }

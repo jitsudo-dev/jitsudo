@@ -7,6 +7,7 @@ package policy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -130,6 +131,9 @@ func (e *Engine) EvalTimeoutSeconds(ctx context.Context, identity *auth.Identity
 		return int64(n), nil
 	case int64:
 		return n, nil
+	case json.Number:
+		i, _ := n.Int64()
+		return i, nil
 	case nil:
 		return 0, nil
 	}
