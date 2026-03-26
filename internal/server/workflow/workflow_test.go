@@ -7,13 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	jitsudov1alpha1 "github.com/jitsudo-dev/jitsudo/internal/gen/proto/go/jitsudo/v1alpha1"
 	"github.com/jitsudo-dev/jitsudo/internal/providers"
 	"github.com/jitsudo-dev/jitsudo/internal/providers/mock"
 	"github.com/jitsudo-dev/jitsudo/internal/server/audit"
+	"github.com/jitsudo-dev/jitsudo/internal/server/auth"
 	"github.com/jitsudo-dev/jitsudo/internal/store"
 )
 
@@ -36,12 +39,21 @@ type stubStore struct {
 	activeExpiredRows []*store.RequestRow
 	// listExpiredCalled is set true whenever ListActiveExpired is invoked.
 	listExpiredCalled bool
+
+	// Advisory lock control for sweepPendingTimedOut tests.
+	pendingLockAcquired bool  // default true
+	pendingLockErr      error // non-nil simulates a lock acquisition failure
+
+	// Rows returned by ListPendingTimedOut. Default nil (none).
+	pendingTimedOutRows  []*store.RequestRow
+	pendingTimedOutCalled bool
 }
 
 func newStubStore(rows ...*store.RequestRow) *stubStore {
 	s := &stubStore{
-		rows:              make(map[string]*store.RequestRow),
-		sweepLockAcquired: true, // default: this instance wins the lock
+		rows:                make(map[string]*store.RequestRow),
+		sweepLockAcquired:  true, // default: this instance wins the expiry lock
+		pendingLockAcquired: true, // default: this instance wins the pending timeout lock
 	}
 	for _, r := range rows {
 		cp := *r
@@ -136,11 +148,17 @@ func (s *stubStore) TryAcquireSweepLock(_ context.Context) (bool, func(), error)
 }
 
 func (s *stubStore) ListPendingTimedOut(_ context.Context) ([]*store.RequestRow, error) {
-	return nil, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingTimedOutCalled = true
+	return s.pendingTimedOutRows, nil
 }
 
 func (s *stubStore) TryAcquirePendingTimeoutLock(_ context.Context) (bool, func(), error) {
-	return true, func() {}, nil
+	if s.pendingLockErr != nil {
+		return false, func() {}, s.pendingLockErr
+	}
+	return s.pendingLockAcquired, func() {}, nil
 }
 
 // stubAudit records all Append calls for assertion.
@@ -175,6 +193,54 @@ func (a *stubAudit) findByAction(action string) (audit.Entry, bool) {
 		}
 	}
 	return audit.Entry{}, false
+}
+
+// ── stubPolicy ────────────────────────────────────────────────────────────────
+
+// stubPolicy is a configurable stub for the policyEvaluator interface.
+type stubPolicy struct {
+	eligibilityAllowed bool
+	eligibilityReason  string
+	eligibilityErr     error
+	tier               string // "auto", "human", "ai_review"
+	tierErr            error
+	approvalAllowed    bool
+	approvalErr        error
+	timeoutSecs        int64
+	timeoutSecsErr     error
+	timeoutAction      string
+	timeoutActionErr   error
+}
+
+func (p *stubPolicy) EvalEligibility(_ context.Context, _ *auth.Identity, _ *jitsudov1alpha1.CreateRequestInput) (bool, string, error) {
+	return p.eligibilityAllowed, p.eligibilityReason, p.eligibilityErr
+}
+
+func (p *stubPolicy) EvalApprovalTier(_ context.Context, _ *auth.Identity, _ *jitsudov1alpha1.CreateRequestInput) (string, error) {
+	return p.tier, p.tierErr
+}
+
+func (p *stubPolicy) EvalApproval(_ context.Context, _ *auth.Identity, _ *store.RequestRow) (bool, string, error) {
+	return p.approvalAllowed, "", p.approvalErr
+}
+
+func (p *stubPolicy) EvalTimeoutSeconds(_ context.Context, _ *auth.Identity, _, _, _ string, _ int64) (int64, error) {
+	return p.timeoutSecs, p.timeoutSecsErr
+}
+
+func (p *stubPolicy) EvalTimeoutAction(_ context.Context, _ *auth.Identity, _, _, _ string, _ int64) (string, error) {
+	return p.timeoutAction, p.timeoutActionErr
+}
+
+// allowPolicy returns a stubPolicy that allows eligibility with the given tier.
+func allowPolicy(tier string) *stubPolicy {
+	return &stubPolicy{eligibilityAllowed: true, tier: tier}
+}
+
+func newTestEngineWithPolicy(s engineStore, a auditAppender, p policyEvaluator) *Engine {
+	registry := providers.NewRegistry()
+	registry.Register(mock.New())
+	return NewEngine(s, a, p, registry, nil)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -513,5 +579,240 @@ func TestSweepExpired_LockError(t *testing.T) {
 	s.mu.Unlock()
 	if called {
 		t.Error("ListActiveExpired was called after a lock acquisition error")
+	}
+}
+
+// ── CreateMCPRequest ──────────────────────────────────────────────────────────
+
+func mcpIdentity() *auth.Identity {
+	return &auth.Identity{Email: "agent@example.com", Subject: "sub-agent"}
+}
+
+func mcpInput() MCPRequestInput {
+	return MCPRequestInput{
+		Action:          "s3:GetObject",
+		Resource:        "arn:aws:s3:::my-bucket/*",
+		DurationSeconds: 3600,
+		Reason:          "integration test",
+	}
+}
+
+func TestCreateMCPRequest_Pending(t *testing.T) {
+	s := newStubStore()
+	a := &stubAudit{}
+	pol := allowPolicy("human")
+	e := newTestEngineWithPolicy(s, a, pol)
+
+	req, err := e.CreateMCPRequest(context.Background(), mcpIdentity(), mcpInput())
+	if err != nil {
+		t.Fatalf("CreateMCPRequest: %v", err)
+	}
+	if req.State != store.StatePending {
+		t.Errorf("State = %q, want PENDING", req.State)
+	}
+	if req.PendingTimeoutAt != nil {
+		t.Error("expected nil PendingTimeoutAt when timeout_seconds=0")
+	}
+	if _, ok := a.findByAction(audit.ActionRequestCreated); !ok {
+		t.Errorf("audit missing %q; got %v", audit.ActionRequestCreated, a.actions())
+	}
+	if entry, ok := a.findByAction(audit.ActionRequestCreated); ok {
+		if !strings.Contains(entry.DetailsJSON, `"requestor_surface":"mcp"`) {
+			t.Errorf("audit DetailsJSON missing requestor_surface:mcp, got %q", entry.DetailsJSON)
+		}
+	}
+}
+
+func TestCreateMCPRequest_PendingWithTimeout(t *testing.T) {
+	s := newStubStore()
+	a := &stubAudit{}
+	pol := allowPolicy("human")
+	pol.timeoutSecs = 300
+	pol.timeoutAction = "deny"
+	e := newTestEngineWithPolicy(s, a, pol)
+
+	req, err := e.CreateMCPRequest(context.Background(), mcpIdentity(), mcpInput())
+	if err != nil {
+		t.Fatalf("CreateMCPRequest: %v", err)
+	}
+	if req.PendingTimeoutAt == nil {
+		t.Error("expected non-nil PendingTimeoutAt when timeout_seconds=300")
+	}
+	if req.PendingTimeoutAction != "deny" {
+		t.Errorf("PendingTimeoutAction = %q, want deny", req.PendingTimeoutAction)
+	}
+}
+
+func TestCreateMCPRequest_AutoApproved(t *testing.T) {
+	s := newStubStore()
+	a := &stubAudit{}
+	pol := allowPolicy("auto")
+	e := newTestEngineWithPolicy(s, a, pol)
+
+	req, err := e.CreateMCPRequest(context.Background(), mcpIdentity(), mcpInput())
+	if err != nil {
+		t.Fatalf("CreateMCPRequest: %v", err)
+	}
+	if req.State != store.StateActive {
+		t.Errorf("State = %q, want ACTIVE for auto tier", req.State)
+	}
+	if len(req.CredentialsJSON) == 0 {
+		t.Error("expected credentials after auto-approve")
+	}
+	actions := a.actions()
+	for _, want := range []string{audit.ActionRequestCreated, audit.ActionGrantIssued} {
+		found := false
+		for _, got := range actions {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("audit missing %q; got %v", want, actions)
+		}
+	}
+}
+
+func TestCreateMCPRequest_PolicyDenied(t *testing.T) {
+	s := newStubStore()
+	pol := &stubPolicy{eligibilityAllowed: false, eligibilityReason: "role not permitted"}
+	e := newTestEngineWithPolicy(s, &stubAudit{}, pol)
+
+	_, err := e.CreateMCPRequest(context.Background(), mcpIdentity(), mcpInput())
+	if err == nil {
+		t.Fatal("expected error for denied eligibility, got nil")
+	}
+	if !strings.Contains(err.Error(), "not eligible") {
+		t.Errorf("error = %q, want it to contain 'not eligible'", err.Error())
+	}
+}
+
+// ── sweepPendingTimedOut ──────────────────────────────────────────────────────
+
+func pendingTimeoutRow(id, action string) *store.RequestRow {
+	now := time.Now().UTC()
+	past := now.Add(-time.Minute)
+	return &store.RequestRow{
+		ID:                   id,
+		State:                store.StatePending,
+		RequesterIdentity:    "agent@example.com",
+		Provider:             "mock",
+		Role:                 "admin",
+		ResourceScope:        "test-scope",
+		DurationSeconds:      3600,
+		ApproverTier:         "human",
+		PendingTimeoutAt:     &past,
+		PendingTimeoutAction: action,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+}
+
+func TestSweepPendingTimedOut_LockNotAcquired(t *testing.T) {
+	row := pendingTimeoutRow("req_pt_001", "deny")
+	s := newStubStore(row)
+	s.pendingTimedOutRows = []*store.RequestRow{row}
+	s.pendingLockAcquired = false
+
+	e := newTestEngineWithPolicy(s, &stubAudit{}, allowPolicy("human"))
+	e.sweepPendingTimedOut(context.Background())
+
+	s.mu.Lock()
+	called := s.pendingTimedOutCalled
+	s.mu.Unlock()
+	if called {
+		t.Error("ListPendingTimedOut was called even though advisory lock was not acquired")
+	}
+	// Row must remain PENDING.
+	updated, _ := s.GetRequest(context.Background(), "req_pt_001")
+	if updated.State != store.StatePending {
+		t.Errorf("State = %q, want PENDING (sweep skipped)", updated.State)
+	}
+}
+
+func TestSweepPendingTimedOut_LockError(t *testing.T) {
+	s := newStubStore()
+	s.pendingLockErr = errors.New("db unavailable")
+
+	e := newTestEngineWithPolicy(s, &stubAudit{}, allowPolicy("human"))
+	// Must not panic.
+	e.sweepPendingTimedOut(context.Background())
+
+	s.mu.Lock()
+	called := s.pendingTimedOutCalled
+	s.mu.Unlock()
+	if called {
+		t.Error("ListPendingTimedOut was called after lock acquisition error")
+	}
+}
+
+func TestSweepPendingTimedOut_ActionDeny(t *testing.T) {
+	const reqID = "req_pt_deny"
+	row := pendingTimeoutRow(reqID, "deny")
+	s := newStubStore(row)
+	s.pendingTimedOutRows = []*store.RequestRow{row}
+
+	a := &stubAudit{}
+	e := newTestEngineWithPolicy(s, a, allowPolicy("human"))
+	e.sweepPendingTimedOut(context.Background())
+
+	updated, err := s.GetRequest(context.Background(), reqID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if updated.State != store.StateRejected {
+		t.Errorf("State = %q, want REJECTED", updated.State)
+	}
+	if _, ok := a.findByAction(audit.ActionRequestDenied); !ok {
+		t.Errorf("audit missing %q; got %v", audit.ActionRequestDenied, a.actions())
+	}
+}
+
+func TestSweepPendingTimedOut_ActionAutoApprove(t *testing.T) {
+	const reqID = "req_pt_auto"
+	row := pendingTimeoutRow(reqID, "auto_approve")
+	s := newStubStore(row)
+	s.pendingTimedOutRows = []*store.RequestRow{row}
+
+	a := &stubAudit{}
+	e := newTestEngineWithPolicy(s, a, allowPolicy("human"))
+	e.sweepPendingTimedOut(context.Background())
+
+	updated, err := s.GetRequest(context.Background(), reqID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if updated.State != store.StateActive {
+		t.Errorf("State = %q, want ACTIVE after auto_approve timeout", updated.State)
+	}
+	if _, ok := a.findByAction(audit.ActionGrantIssued); !ok {
+		t.Errorf("audit missing %q; got %v", audit.ActionGrantIssued, a.actions())
+	}
+}
+
+func TestSweepPendingTimedOut_ActionEscalate(t *testing.T) {
+	const reqID = "req_pt_esc"
+	row := pendingTimeoutRow(reqID, "escalate")
+	s := newStubStore(row)
+	s.pendingTimedOutRows = []*store.RequestRow{row}
+
+	a := &stubAudit{}
+	e := newTestEngineWithPolicy(s, a, allowPolicy("human"))
+	e.sweepPendingTimedOut(context.Background())
+
+	updated, err := s.GetRequest(context.Background(), reqID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	// Row stays PENDING but tier is upgraded to "human".
+	if updated.State != store.StatePending {
+		t.Errorf("State = %q, want PENDING (escalate keeps request alive)", updated.State)
+	}
+	if updated.ApproverTier != "human" {
+		t.Errorf("ApproverTier = %q, want human", updated.ApproverTier)
+	}
+	if _, ok := a.findByAction(audit.ActionRequestAIEscalated); !ok {
+		t.Errorf("audit missing %q; got %v", audit.ActionRequestAIEscalated, a.actions())
 	}
 }

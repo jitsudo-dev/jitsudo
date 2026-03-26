@@ -25,7 +25,6 @@ import (
 	"github.com/jitsudo-dev/jitsudo/internal/server/audit"
 	"github.com/jitsudo-dev/jitsudo/internal/server/auth"
 	"github.com/jitsudo-dev/jitsudo/internal/server/notifications"
-	"github.com/jitsudo-dev/jitsudo/internal/server/policy"
 	"github.com/jitsudo-dev/jitsudo/internal/store"
 )
 
@@ -49,11 +48,21 @@ type auditAppender interface {
 	Append(ctx context.Context, e audit.Entry) error
 }
 
+// policyEvaluator is the subset of *policy.Engine used by the Engine.
+// Extracted as an interface so unit tests can substitute a stub without OPA.
+type policyEvaluator interface {
+	EvalEligibility(ctx context.Context, identity *auth.Identity, input *jitsudov1alpha1.CreateRequestInput) (bool, string, error)
+	EvalApprovalTier(ctx context.Context, identity *auth.Identity, input *jitsudov1alpha1.CreateRequestInput) (string, error)
+	EvalApproval(ctx context.Context, approver *auth.Identity, req *store.RequestRow) (bool, string, error)
+	EvalTimeoutSeconds(ctx context.Context, identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64) (int64, error)
+	EvalTimeoutAction(ctx context.Context, identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64) (string, error)
+}
+
 // Engine drives elevation request lifecycle transitions.
 type Engine struct {
 	store         engineStore
 	audit         auditAppender
-	policy        *policy.Engine
+	policy        policyEvaluator
 	registry      *providers.Registry
 	notifications *notifications.Dispatcher
 }
@@ -61,7 +70,7 @@ type Engine struct {
 // NewEngine wires together the store, audit logger, policy engine, provider
 // registry, and optional notification dispatcher.
 // Passing nil for dispatcher disables notifications.
-func NewEngine(s engineStore, a auditAppender, p *policy.Engine, r *providers.Registry, n *notifications.Dispatcher) *Engine {
+func NewEngine(s engineStore, a auditAppender, p policyEvaluator, r *providers.Registry, n *notifications.Dispatcher) *Engine {
 	return &Engine{store: s, audit: a, policy: p, registry: r, notifications: n}
 }
 
