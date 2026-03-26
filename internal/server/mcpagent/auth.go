@@ -18,11 +18,8 @@ type authVerifier interface {
 }
 
 // authenticate extracts a Bearer token from r, verifies it via v, and sets
-// id.PrincipalType = auth.PrincipalTypeAgent to mark the request as originating
-// from an AI agent requestor surface.
-//
-// Returns the authenticated Identity, or nil if authentication failed (in which
-// case a 401 response has already been written to w).
+// id.PrincipalType = auth.PrincipalTypeAgent. Returns nil and writes a 401 on
+// failure.
 func authenticate(w http.ResponseWriter, r *http.Request, v authVerifier) *auth.Identity {
 	raw := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(raw, "Bearer ")

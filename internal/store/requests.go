@@ -302,8 +302,7 @@ func (s *Store) TransitionRequest(ctx context.Context, id string, fromState, toS
 }
 
 // ListActiveGrantsByIdentity returns all ACTIVE grants for a given requester identity
-// whose expiry is in the future (or have no expiry set). Used by the MCP agent
-// list_my_active_grants tool.
+// whose expiry is in the future (or have no expiry set).
 func (s *Store) ListActiveGrantsByIdentity(ctx context.Context, identity string) ([]*RequestRow, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, state, requester_identity, provider, role, resource_scope,
@@ -336,7 +335,6 @@ func (s *Store) ListActiveGrantsByIdentity(ctx context.Context, identity string)
 }
 
 // ListPendingTimedOut returns PENDING requests whose pending_timeout_at has passed.
-// Used by the pending timeout sweeper.
 func (s *Store) ListPendingTimedOut(ctx context.Context) ([]*RequestRow, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, state, requester_identity, provider, role, resource_scope,
@@ -369,8 +367,6 @@ func (s *Store) ListPendingTimedOut(ctx context.Context) ([]*RequestRow, error) 
 }
 
 // SetPendingTimeout sets the timeout deadline and action for a PENDING request.
-// Called by CreateMCPRequest (and potentially CreateRequest) when the policy
-// specifies a timeout_seconds value.
 func (s *Store) SetPendingTimeout(ctx context.Context, id string, timeoutAt time.Time, action string) error {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE elevation_requests

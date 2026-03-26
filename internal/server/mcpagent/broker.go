@@ -76,10 +76,8 @@ func (b *Broker) Subscribe(requestID, identity string) (<-chan sseEvent, func())
 	return ch, unsub
 }
 
-// Notify implements notifications.Notifier. It is called by the dispatcher
-// (in its own goroutine with a 10s deadline) for every workflow event.
-// For resolution events it fetches the current row (for credentials) and
-// delivers to any waiting subscribers.
+// Notify implements notifications.Notifier. For resolution events it fetches
+// the current row (for credentials) and delivers to any waiting subscribers.
 func (b *Broker) Notify(ctx context.Context, event notifications.Event) error {
 	outcome := outcomeFor(event.Type)
 	if outcome == "" {

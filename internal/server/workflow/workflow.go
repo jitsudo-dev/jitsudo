@@ -836,8 +836,6 @@ type MCPRequestInput struct {
 	TicketRef       string
 }
 
-// inferProviderFromResource returns the provider name inferred from the resource identifier.
-// Returns "mock" for MVP; TODO: route by ARN prefix (aws, gcp, azure) in a future milestone.
 func inferProviderFromResource(_ string) string {
 	return "mock" // TODO: route by ARN prefix
 }
