@@ -23,12 +23,12 @@ import (
 type Engine struct {
 	store *store.Store
 
-	mu                   sync.RWMutex
-	eligibilityQuery     *rego.PreparedEvalQuery
-	approvalQuery        *rego.PreparedEvalQuery
-	approvalTierQuery    *rego.PreparedEvalQuery
-	timeoutSecondsQuery  *rego.PreparedEvalQuery // data.jitsudo.approval.timeout_seconds
-	timeoutActionQuery   *rego.PreparedEvalQuery // data.jitsudo.approval.timeout_action
+	mu                  sync.RWMutex
+	eligibilityQuery    *rego.PreparedEvalQuery
+	approvalQuery       *rego.PreparedEvalQuery
+	approvalTierQuery   *rego.PreparedEvalQuery
+	timeoutSecondsQuery *rego.PreparedEvalQuery // data.jitsudo.approval.timeout_seconds
+	timeoutActionQuery  *rego.PreparedEvalQuery // data.jitsudo.approval.timeout_action
 }
 
 // NewEngine returns an Engine. Call Reload before first use.

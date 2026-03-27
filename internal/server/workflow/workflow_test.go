@@ -45,14 +45,14 @@ type stubStore struct {
 	pendingLockErr      error // non-nil simulates a lock acquisition failure
 
 	// Rows returned by ListPendingTimedOut. Default nil (none).
-	pendingTimedOutRows  []*store.RequestRow
+	pendingTimedOutRows   []*store.RequestRow
 	pendingTimedOutCalled bool
 }
 
 func newStubStore(rows ...*store.RequestRow) *stubStore {
 	s := &stubStore{
 		rows:                make(map[string]*store.RequestRow),
-		sweepLockAcquired:  true, // default: this instance wins the expiry lock
+		sweepLockAcquired:   true, // default: this instance wins the expiry lock
 		pendingLockAcquired: true, // default: this instance wins the pending timeout lock
 	}
 	for _, r := range rows {
