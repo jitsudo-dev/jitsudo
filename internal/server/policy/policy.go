@@ -7,6 +7,7 @@ package policy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -22,10 +23,12 @@ import (
 type Engine struct {
 	store *store.Store
 
-	mu                sync.RWMutex
-	eligibilityQuery  *rego.PreparedEvalQuery
-	approvalQuery     *rego.PreparedEvalQuery
-	approvalTierQuery *rego.PreparedEvalQuery
+	mu                  sync.RWMutex
+	eligibilityQuery    *rego.PreparedEvalQuery
+	approvalQuery       *rego.PreparedEvalQuery
+	approvalTierQuery   *rego.PreparedEvalQuery
+	timeoutSecondsQuery *rego.PreparedEvalQuery // data.jitsudo.approval.timeout_seconds
+	timeoutActionQuery  *rego.PreparedEvalQuery // data.jitsudo.approval.timeout_action
 }
 
 // NewEngine returns an Engine. Call Reload before first use.
@@ -48,11 +51,21 @@ func (e *Engine) Reload(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("policy: reload approver_tier: %w", err)
 	}
+	tsq, err := e.buildQuery(ctx, store.PolicyTypeApproval, "data.jitsudo.approval.timeout_seconds")
+	if err != nil {
+		return fmt.Errorf("policy: reload timeout_seconds: %w", err)
+	}
+	taq, err := e.buildQuery(ctx, store.PolicyTypeApproval, "data.jitsudo.approval.timeout_action")
+	if err != nil {
+		return fmt.Errorf("policy: reload timeout_action: %w", err)
+	}
 
 	e.mu.Lock()
 	e.eligibilityQuery = eliq
 	e.approvalQuery = appq
 	e.approvalTierQuery = tierq
+	e.timeoutSecondsQuery = tsq
+	e.timeoutActionQuery = taq
 	e.mu.Unlock()
 
 	log.Info().Msg("policy engine reloaded")
@@ -99,6 +112,58 @@ func (e *Engine) EvalApproval(ctx context.Context, approver *auth.Identity, req 
 	return e.eval(ctx, q, buildInput(approver, req.Provider, req.Role, req.ResourceScope, req.DurationSeconds, tier))
 }
 
+// EvalTimeoutSeconds evaluates data.jitsudo.approval.timeout_seconds for a request.
+// Returns 0 if the rule is not defined (meaning no timeout applies).
+func (e *Engine) EvalTimeoutSeconds(ctx context.Context, identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64) (int64, error) {
+	e.mu.RLock()
+	q := e.timeoutSecondsQuery
+	e.mu.RUnlock()
+	if q == nil {
+		return 0, nil
+	}
+	trustTier := e.principalTrustTier(ctx, identity.Email)
+	v, err := e.evalScalar(ctx, q, buildInput(identity, provider, role, resourceScope, durationSeconds, trustTier))
+	if err != nil {
+		return 0, err
+	}
+	switch n := v.(type) {
+	case float64:
+		return int64(n), nil
+	case int64:
+		return n, nil
+	case json.Number:
+		i, _ := n.Int64()
+		return i, nil
+	case nil:
+		return 0, nil
+	}
+	return 0, nil
+}
+
+// EvalTimeoutAction evaluates data.jitsudo.approval.timeout_action for a request.
+// Returns "deny" if the rule is not defined (safe default).
+// Valid values: "deny", "auto_approve", "escalate".
+func (e *Engine) EvalTimeoutAction(ctx context.Context, identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64) (string, error) {
+	e.mu.RLock()
+	q := e.timeoutActionQuery
+	e.mu.RUnlock()
+	if q == nil {
+		return "deny", nil
+	}
+	trustTier := e.principalTrustTier(ctx, identity.Email)
+	v, err := e.evalScalar(ctx, q, buildInput(identity, provider, role, resourceScope, durationSeconds, trustTier))
+	if err != nil {
+		return "deny", err
+	}
+	action, _ := v.(string)
+	switch action {
+	case "deny", "auto_approve", "escalate":
+		return action, nil
+	default:
+		return "deny", nil
+	}
+}
+
 // EvalRaw evaluates the given policy type against a pre-built OPA input map.
 // This is used by the EvalPolicy RPC for dry-run evaluation.
 func (e *Engine) EvalRaw(ctx context.Context, ptype store.PolicyType, input map[string]any) (bool, string, error) {
@@ -138,6 +203,8 @@ func (e *Engine) CompileCheck(ctx context.Context, proposed *store.PolicyRow) er
 		queries = []string{
 			"data.jitsudo.approval.allow",
 			"data.jitsudo.approval.approver_tier",
+			"data.jitsudo.approval.timeout_seconds",
+			"data.jitsudo.approval.timeout_action",
 		}
 	}
 	for _, q := range queries {
@@ -167,6 +234,8 @@ func (e *Engine) CompileCheckWithout(ctx context.Context, removedID string, ptyp
 		queries = []string{
 			"data.jitsudo.approval.allow",
 			"data.jitsudo.approval.approver_tier",
+			"data.jitsudo.approval.timeout_seconds",
+			"data.jitsudo.approval.timeout_action",
 		}
 	}
 	for _, q := range queries {
@@ -272,8 +341,23 @@ func (e *Engine) evalTier(ctx context.Context, q *rego.PreparedEvalQuery, input 
 	}
 }
 
+// evalScalar runs a prepared query and returns the raw expression value (any type).
+// Returns nil if the rule is undefined. Used for timeout_seconds and timeout_action.
+func (e *Engine) evalScalar(ctx context.Context, q *rego.PreparedEvalQuery, input map[string]any) (any, error) {
+	results, err := q.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return nil, fmt.Errorf("policy: eval scalar: %w", err)
+	}
+	if len(results) == 0 || len(results[0].Expressions) == 0 {
+		return nil, nil
+	}
+	return results[0].Expressions[0].Value, nil
+}
+
 // buildInput constructs the OPA input document.
 // trustTier is the principal's current trust tier (0–4) from the principals table.
+// identity.PrincipalType is included as input.context.principal_type so that Rego
+// policies can differentiate between human CLI requests and MCP agent requests.
 func buildInput(identity *auth.Identity, provider, role, resourceScope string, durationSeconds int64, trustTier int) map[string]any {
 	return map[string]any{
 		"user": map[string]any{
@@ -288,7 +372,8 @@ func buildInput(identity *auth.Identity, provider, role, resourceScope string, d
 			"duration_seconds": durationSeconds,
 		},
 		"context": map[string]any{
-			"trust_tier": trustTier,
+			"trust_tier":     trustTier,
+			"principal_type": string(identity.PrincipalType),
 		},
 	}
 }

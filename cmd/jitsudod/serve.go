@@ -68,6 +68,7 @@ func runServe(ctx context.Context, configPath string) error {
 		},
 		MCPToken:         cfg.MCP.Token,
 		MCPAgentIdentity: cfg.MCP.AgentIdentity,
+		MCPAgentAddr:     cfg.Server.MCPAgentAddr,
 	}, st)
 
 	if err := srv.Start(ctx); err != nil {

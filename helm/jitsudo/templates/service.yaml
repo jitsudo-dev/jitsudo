@@ -17,3 +17,9 @@ spec:
       port: {{ .Values.service.grpc.port }}
       targetPort: grpc
       protocol: TCP
+    {{- if .Values.config.mcpAgent.enabled }}
+    - name: mcp-agent
+      port: {{ .Values.service.mcpAgent.port }}
+      targetPort: mcp-agent
+      protocol: TCP
+    {{- end }}

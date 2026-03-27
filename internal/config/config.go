@@ -46,8 +46,9 @@ type MCPCfg struct {
 
 // ServerCfg holds network listener addresses.
 type ServerCfg struct {
-	HTTPAddr string `yaml:"http_addr"`
-	GRPCAddr string `yaml:"grpc_addr"`
+	HTTPAddr     string `yaml:"http_addr"`
+	GRPCAddr     string `yaml:"grpc_addr"`
+	MCPAgentAddr string `yaml:"mcp_agent_addr"`
 }
 
 // DatabaseCfg holds the PostgreSQL connection DSN.
@@ -124,8 +125,9 @@ func Load(path string) (*FileConfig, error) {
 func defaults() *FileConfig {
 	return &FileConfig{
 		Server: ServerCfg{
-			HTTPAddr: ":8080",
-			GRPCAddr: ":8443",
+			HTTPAddr:     ":8080",
+			GRPCAddr:     ":8443",
+			MCPAgentAddr: ":8081",
 		},
 		Database: DatabaseCfg{
 			URL: "postgres://jitsudo:jitsudo@localhost:5432/jitsudo?sslmode=disable",
@@ -146,6 +148,7 @@ func defaults() *FileConfig {
 func applyEnv(cfg *FileConfig) {
 	setIfEnv(&cfg.Server.HTTPAddr, "JITSUDOD_HTTP_ADDR")
 	setIfEnv(&cfg.Server.GRPCAddr, "JITSUDOD_GRPC_ADDR")
+	setIfEnv(&cfg.Server.MCPAgentAddr, "JITSUDOD_MCP_AGENT_ADDR")
 	setIfEnv(&cfg.Database.URL, "JITSUDOD_DATABASE_URL")
 	setIfEnv(&cfg.Auth.OIDCIssuer, "JITSUDOD_OIDC_ISSUER")
 	setIfEnv(&cfg.Auth.OIDCDiscoveryURL, "JITSUDOD_OIDC_DISCOVERY_URL")

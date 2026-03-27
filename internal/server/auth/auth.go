@@ -27,11 +27,24 @@ type Config struct {
 	ClientID     string // Expected audience claim, e.g. "jitsudo-cli"
 }
 
+// PrincipalType identifies the kind of principal that authenticated.
+// The zero value "" is treated the same as PrincipalTypeHuman by all callers.
+type PrincipalType string
+
+const (
+	// PrincipalTypeHuman is the default for human users authenticating via the CLI or REST API.
+	PrincipalTypeHuman PrincipalType = "human"
+	// PrincipalTypeAgent is set by the MCP agent server after OIDC verification,
+	// marking the request as originating from an AI agent requestor surface.
+	PrincipalTypeAgent PrincipalType = "agent"
+)
+
 // Identity holds the verified claims extracted from an OIDC ID token.
 type Identity struct {
-	Subject string
-	Email   string
-	Groups  []string
+	Subject       string
+	Email         string
+	Groups        []string
+	PrincipalType PrincipalType // set by surface-specific middleware; zero value treated as "human"
 }
 
 // Verifier validates OIDC ID tokens and extracts Identity claims.

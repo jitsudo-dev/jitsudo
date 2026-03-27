@@ -121,6 +121,15 @@ config:
     # Identity recorded in the audit log for every AI approval decision.
     agentIdentity: "mcp-agent"
 
+  # ── MCP Agent Requestor Interface ───────────────────────────────────────────
+  # Set enabled: true to start the MCP agent-requestor server on port 8081.
+  # AI agents (e.g. Claude Desktop) connect here to call request_access and
+  # receive access/resolved push notifications over SSE.
+  # Authentication uses the same OIDC provider as the main API.
+  mcpAgent:
+    enabled: false
+    addr: ":8081"
+
   log:
     level: "info"
     format: "json"
@@ -133,6 +142,9 @@ service:
   grpc:
     type: ClusterIP
     port: 8443
+  mcpAgent:
+    type: ClusterIP
+    port: 8081
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:
